@@ -1,0 +1,20 @@
+{
+  // use the project venv interpreter
+  "python.defaultInterpreterPath": ".venv\\Scripts\\python.exe",
+  // auto-activate venv in integrated terminal
+  "python.terminal.activateEnvironment": true,
+
+  // tell Pylance exactly where to find packages
+  "python.analysis.extraPaths": [
+    ".venv\\Lib\\site-packages"
+  ],
+  // (older Pylance/pyright also honors these)
+  "python.analysis.venvPath": ".",
+  "python.analysis.venv": ".venv",
+
+  // keep type checking reasonable and quiet
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingTypeStubs": "none"
+  }
+}

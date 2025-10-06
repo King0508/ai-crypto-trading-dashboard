@@ -1,98 +1,230 @@
 # src/train.py
-import os, json, argparse, yaml, math, random
+from __future__ import annotations
+
+import os
+import json
+import math
+import time
+import random
+import argparse
+from typing import Dict, Tuple
+
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
-from torch import nn, optim
-from tqdm import tqdm
-from data import load_dataset, save_scaler, metrics_binary
-from model import TCN
+import torch.nn as nn
+import torch.optim as optim
+import yaml
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.metrics import roc_auc_score, accuracy_score
+from tqdm.auto import tqdm
+
+from data import load_dataset
+from model import TCN  # make sure your model class is named TCN in src/model.py
+
+
+# ------------------------- helpers ------------------------- #
+
+
+def _to_int(x, default):
+    try:
+        return int(x)
+    except Exception:
+        return int(default)
+
+
+def _to_float(x, default):
+    try:
+        return float(x)
+    except Exception:
+        return float(default)
+
+
+def _get_device(cfg_device: str) -> torch.device:
+    d = (cfg_device or "cpu").lower()
+    if d.startswith("cuda") and torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
 
 def set_seed(seed: int):
-    import random, numpy as np, torch
-    random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+# compute pos_weight for BCEWithLogitsLoss if labels are skewed
+def compute_pos_weight(train_ds: TensorDataset, device: torch.device) -> torch.Tensor:
+    # read labels efficiently
+    loader = DataLoader(train_ds, batch_size=4096, shuffle=False)
+    total = 0
+    pos = 0
+    for _, y in loader:
+        y_np = y.numpy()
+        total += y_np.size
+        pos += int(y_np.sum())
+    neg = max(total - pos, 0)
+    pos = max(pos, 1)  # avoid /0
+    val = float(neg / pos)
+    return torch.tensor([val], device=device, dtype=torch.float32)
+
+
+# ------------------------- training/eval steps ------------------------- #
+
+
+def run_val(
+    model: nn.Module, loader: DataLoader, device: torch.device
+) -> Tuple[float, float, np.ndarray, np.ndarray]:
+    model.eval()
+    sigmoid = nn.Sigmoid()
+    y_true, y_prob = [], []
+    with torch.no_grad():
+        for xb, yb in loader:
+            xb = xb.to(device)
+            logits = model(xb)
+            if logits.ndim == 2 and logits.shape[1] == 1:
+                logits = logits.squeeze(1)
+            probs = sigmoid(logits).detach().cpu().numpy()
+            y_prob.append(probs)
+            y_true.append(yb.numpy())
+    y_true = np.concatenate(y_true, axis=0)
+    y_prob = np.concatenate(y_prob, axis=0)
+    try:
+        auc = roc_auc_score(y_true, y_prob)
+    except Exception:
+        auc = float("nan")
+    acc = accuracy_score(y_true, (y_prob >= 0.5).astype(int))
+    return float(auc), float(acc), y_true, y_prob
+
 
 def main(args):
+    # ---------------- load config ----------------
     with open(args.config, "r") as f:
-        cfg = yaml.safe_load(f)
-    set_seed(cfg.get("seed", 1337))
+        cfg: Dict = yaml.safe_load(f)
 
-    device = cfg.get("device", "cpu")
+    seed = _to_int(cfg.get("seed", 1337), 1337)
+    set_seed(seed)
+
+    device = _get_device(cfg.get("device", "cpu"))
+
+    # ---------------- dataset ----------------
+    splits, meta, n_seq = load_dataset(cfg)
+
+    batch_size = _to_int(cfg.get("train", {}).get("batch_size", 256), 256)
+    epochs = _to_int(cfg.get("train", {}).get("epochs", 10), 10)
+    lr = _to_float(cfg.get("train", {}).get("lr", 3e-4), 3e-4)
+    weight_decay = _to_float(cfg.get("train", {}).get("weight_decay", 1e-4), 1e-4)
+    grad_clip_norm = _to_float(cfg.get("train", {}).get("grad_clip_norm", 1.0), 1.0)
+    patience = _to_int(cfg.get("train", {}).get("early_stop_patience", 3), 3)
+
     artifacts_dir = cfg.get("artifacts_dir", "artifacts")
     os.makedirs(artifacts_dir, exist_ok=True)
+    ckpt_path = os.path.join(artifacts_dir, "model.pt")
 
-    splits, meta, n_seq = load_dataset(cfg)
-    in_ch = meta["n_channels"] if cfg["model"]["in_channels"] is None else cfg["model"]["in_channels"]
+    train_loader = DataLoader(
+        splits["train"], batch_size=batch_size, shuffle=True, drop_last=False
+    )
+    val_loader = DataLoader(
+        splits["val"], batch_size=batch_size, shuffle=False, drop_last=False
+    )
+
+    # ---------------- model ----------------
+    mcfg = cfg.get("model", {})
     model = TCN(
-        in_ch=in_ch,
-        hidden_ch=cfg["model"]["hidden_channels"],
-        n_layers=cfg["model"]["n_layers"],
-        kernel_size=cfg["model"]["kernel_size"],
-        dropout=cfg["model"]["dropout"],
+        in_channels=(
+            meta.in_channels
+            if mcfg.get("in_channels") in (None, "null")
+            else int(mcfg["in_channels"])
+        ),
+        hidden_channels=_to_int(mcfg.get("hidden_channels", 64), 64),
+        n_layers=_to_int(mcfg.get("n_layers", 5), 5),
+        kernel_size=_to_int(mcfg.get("kernel_size", 3), 3),
+        dropout=_to_float(mcfg.get("dropout", 0.1), 0.1),
     ).to(device)
 
-    opt = optim.AdamW(model.parameters(), lr=cfg["train"]["lr"], weight_decay=cfg["train"]["weight_decay"])
-    loss_fn = nn.BCEWithLogitsLoss()
+    # optional class weighting
+    use_pos_weight = True
+    pos_weight = compute_pos_weight(splits["train"], device) if use_pos_weight else None
 
-    loaders = {
-        split: DataLoader(ds, batch_size=cfg["train"]["batch_size"], shuffle=(split=="train"), num_workers=0)
-        for split, ds in splits.items()
-    }
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    opt = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-    best_val = -1
-    patience = cfg["train"]["early_stop_patience"]
-    bad_epochs = 0
+    # ---------------- train loop ----------------
+    best_auc = -np.inf
+    best_state = None
+    no_improve = 0
 
-    for epoch in range(cfg["train"]["epochs"]):
+    for ep in range(1, epochs + 1):
         model.train()
-        pbar = tqdm(loaders["train"], desc=f"Epoch {epoch+1}/{cfg['train']['epochs']}")
-        for X, y in pbar:
-            X, y = X.to(device), y.to(device)
-            opt.zero_grad()
-            logits = model(X)
-            loss = loss_fn(logits, y)
+        pbar = tqdm(train_loader, desc=f"Epoch {ep}/{epochs}", leave=False)
+        running = 0.0
+        nb = 0
+        for xb, yb in pbar:
+            xb = xb.to(device)
+            yb = yb.to(device)
+            opt.zero_grad(set_to_none=True)
+            logits = model(xb)
+            if logits.ndim == 2 and logits.shape[1] == 1:
+                logits = logits.squeeze(1)
+            loss = loss_fn(logits, yb)
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), cfg["train"]["grad_clip_norm"])
+            if grad_clip_norm and grad_clip_norm > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip_norm)
             opt.step()
-            pbar.set_postfix(loss=float(loss.item()))
 
-        # Eval on val
-        model.eval()
-        y_true, y_prob = [], []
-        with torch.no_grad():
-            for X, y in loaders["val"]:
-                X = X.to(device)
-                logits = model(X)
-                prob = torch.sigmoid(logits).cpu().numpy()
-                y_true.append(y.numpy()); y_prob.append(prob)
-        y_true = np.concatenate(y_true); y_prob = np.concatenate(y_prob)
-        m = metrics_binary(y_true, y_prob)
-        print(f"Val metrics: {m}")
+            running += float(loss.item())
+            nb += 1
+            pbar.set_postfix({"loss": f"{running/nb:.3f}"})
 
-        if np.isnan(m["auc"]) or m["auc"] <= best_val:
-            bad_epochs += 1
+        # ---- validation ----
+        val_auc, val_acc, y_true, y_prob = run_val(model, val_loader, device)
+
+        # tiny threshold sweep (0.30..0.70) for info
+        ths = np.linspace(0.3, 0.7, 9)
+        best_th, best_acc = 0.5, -1.0
+        for th in ths:
+            acc = accuracy_score(y_true, (y_prob >= th).astype(int))
+            if acc > best_acc:
+                best_acc, best_th = acc, th
+
+        print(
+            f"Val metrics: {{'auc': {val_auc}, 'acc': {val_acc}}} | [val] best_th={best_th:.2f} acc={best_acc:.4f}"
+        )
+
+        # early stopping on AUC
+        improved = val_auc > best_auc or (
+            math.isnan(best_auc) and not math.isnan(val_auc)
+        )
+        if improved:
+            best_auc = val_auc
+            no_improve = 0
+            # save checkpoint (state_dict only for simplicity)
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "seed": seed,
+                    "meta": meta.__dict__,
+                },
+                ckpt_path,
+            )
         else:
-            best_val = m["auc"]
-            bad_epochs = 0
-            # save checkpoint
-            torch.save(model.state_dict(), os.path.join(artifacts_dir, "model.pt"))
-            # save meta
-            save_scaler(meta["scaler"], os.path.join(artifacts_dir, "scaler.pkl"))
-            with open(os.path.join(artifacts_dir, "meta.json"), "w") as f:
-                json.dump({"features": meta["features"], "seq_len": meta["seq_len"]}, f, indent=2)
-            with open(os.path.join(artifacts_dir, "val_metrics.json"), "w") as f:
-                json.dump(m, f, indent=2)
+            no_improve += 1
+            if no_improve >= patience:
+                print("Early stopping.")
+                break
 
-        if bad_epochs > patience:
-            print("Early stopping.")
-            break
+    print(f"Training done. Best val AUC: {best_auc}")
 
-    print("Training done. Best val AUC:", best_val)
+    # convenience print
+    if os.path.exists(ckpt_path):
+        print(f"Saved best checkpoint to: {ckpt_path}")
+
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", type=str, required=True)
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config", type=str, required=True, help="Path to YAML config."
+    )
+    args = parser.parse_args()
     main(args)

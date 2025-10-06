@@ -2,10 +2,10 @@
 seed: 1337
 device: "cpu" # "cuda" or "cpu"
 data:
-  path: "data/synth.parquet" # parquet or csv
+  path: "data/btcusdt_1m.parquet" # parquet or csv
   format: "parquet" # "parquet" or "csv"
-  seq_len: 40
-  horizon: 5 # label horizon in steps
+  seq_len: 60
+  horizon: 10 # label horizon in steps
   train_frac: 0.7 # remaining 0.3 split into val/test by time
   val_frac_of_rest: 0.5
   features: null # null -> infer all numeric except timestamp/label
@@ -13,17 +13,17 @@ data:
   standardize: true
 model:
   in_channels: null # null -> infer from dataset
-  hidden_channels: 64
-  n_layers: 5
+  hidden_channels: 96
+  n_layers: 6
   kernel_size: 3
   dropout: 0.1
 train:
-  epochs: 6
-  batch_size: 128
+  epochs: 10
+  batch_size: 256
   lr: 0.0003
   weight_decay: 0.0001
   grad_clip_norm: 1.0
-  early_stop_patience: 2
+  early_stop_patience: 3
 eval:
   threshold: 0.5 # sigmoid threshold for long/short decisions
   trade_fee_bps: 1.0 # half-spread+fees in bps per round-trip

@@ -1,194 +1,192 @@
 # src/data.py
-import os
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
+
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import roc_auc_score, accuracy_score
-from typing import Tuple, Dict, Optional, List
 import torch
-from torch.utils.data import Dataset, DataLoader
-import pickle
-
-NUMERIC_DTYPES = ["int8", "int16", "int32", "int64", "float16", "float32", "float64"]
+from torch.utils.data import TensorDataset
 
 
-def _infer_features(df: pd.DataFrame, timestamp_col: str) -> List[str]:
-    cols = []
-    for c in df.columns:
-        if c == timestamp_col or c == "label":
-            continue
-        if str(df[c].dtype).lower() in NUMERIC_DTYPES:
-            cols.append(c)
-    return cols
+@dataclass
+class DatasetMeta:
+    in_channels: int
+    seq_len: int
+    horizon: int
+    n_total_sequences: int
+    feature_names: List[str]
+    standardize: bool
 
 
-def make_labels(
-    df: pd.DataFrame, horizon: int, bid_cols: List[str], ask_cols: List[str]
-) -> pd.Series:
-    # Mid-price at time t from best bid/ask
-    best_bid = df[bid_cols].iloc[:, 0]
-    best_ask = df[ask_cols].iloc[:, 0]
-    mid = (best_bid + best_ask) / 2.0
-    mid_future = mid.shift(-horizon)
-    y = (mid_future > mid).astype(int)
-    y.iloc[-horizon:] = np.nan  # cannot label tail
-    return y, mid
+def _ensure_mid_and_label(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
+    """
+    Ensure a 'mid' column exists, and if 'label' is missing, create it:
+      label[t] = 1.0 if mid[t+horizon] > mid[t], else 0.0.
+    Works for LOB (bid/ask present) or bar data (close).
+    """
+    if "mid" not in df.columns:
+        if {"bid_px_1", "ask_px_1"}.issubset(df.columns):
+            df["mid"] = (df["bid_px_1"] + df["ask_px_1"]) / 2.0
+        elif "close" in df.columns:
+            df["mid"] = df["close"].astype(float)
+        else:
+            raise ValueError(
+                "No 'mid' present and neither LOB ('bid_px_1','ask_px_1') "
+                "nor 'close' found to construct it."
+            )
 
+    if "label" not in df.columns:
+        fwd = df["mid"].shift(-horizon)
+        df["label"] = (fwd > df["mid"]).astype(float)
 
-class SequenceDS(Dataset):
-    def __init__(self, X: np.ndarray, y: np.ndarray):
-        self.X = X.astype(np.float32)
-        self.y = y.astype(np.float32)
-
-    def __len__(self):
-        return self.X.shape[0]
-
-    def __getitem__(self, idx):
-        return (
-            torch.from_numpy(self.X[idx]),  # (C, T)
-            torch.from_numpy(np.array(self.y[idx])),
-        )
+    return df
 
 
 def build_sequences(
     df: pd.DataFrame, features: List[str], label: pd.Series, seq_len: int
-):
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Turn a time-ordered table into overlapping sequences.
-
-    Input shapes:
-      - df[features].values -> (N, C)
-      - label.values        -> (N,)
-    Output shapes:
-      - X_seq -> (N_seq, C, T)
-      - y_seq -> (N_seq,)
+    Convert time-ordered table to overlapping sequences.
+    X_seq: (N_seq, C, T), y_seq: (N_seq,)
     """
-    import numpy as np
-
     X = df[features].values  # (N, C)
     y = label.values  # (N,)
 
     if X.ndim != 2:
-        raise ValueError(
-            f"Expected X to be 2-D (N, C), got shape {X.shape} with ndim={X.ndim}"
-        )
+        raise ValueError(f"Expected X to be 2-D, got shape {X.shape} (ndim={X.ndim})")
     N, C = X.shape
     if N < seq_len:
-        raise ValueError(f"seq_len={seq_len} is larger than N={N}")
+        raise ValueError(f"seq_len={seq_len} > N={N}")
 
     N_seq = N - seq_len + 1
 
-    # Build windows explicitly to avoid stride tricks issues
     X_seq = np.empty((N_seq, seq_len, C), dtype=np.float32)
     for i in range(N_seq):
         X_seq[i, :, :] = X[i : i + seq_len, :]
 
-    # Align labels to window ends
-    y_seq = y[seq_len - 1 :]
+    y_seq = y[seq_len - 1 :]  # align labels to window ends
 
-    # Drop windows where the label is NaN (end-of-series due to horizon)
+    # Drop windows whose label is NaN (last 'horizon' rows)
     mask = ~np.isnan(y_seq)
     X_seq = X_seq[mask]
     y_seq = y_seq[mask]
 
-    # Final model input shape: (batch, channels, time)
-    if X_seq.ndim != 3:
-        raise ValueError(
-            f"After windowing, expected 3-D X_seq, got {X_seq.shape} with ndim={X_seq.ndim}"
-        )
-    X_seq = np.transpose(X_seq, (0, 2, 1))  # (N_seq, C, T)
-
-    return X_seq, y_seq
+    # Conv1d expects (N, C, T)
+    X_seq = np.transpose(X_seq, (0, 2, 1))
+    return X_seq, y_seq.astype(np.float32)
 
 
-def time_split(n: int, train_frac: float, val_frac_of_rest: float):
-    n_train = int(n * train_frac)
-    rest = n - n_train
-    n_val = int(rest * val_frac_of_rest)
-    idx = {
-        "train": (0, n_train),
-        "val": (n_train, n_train + n_val),
-        "test": (n_train + n_val, n),
-    }
-    return idx
+def _standardize_train_stats(x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Per-channel mean/std on TRAIN: x is (N, C, T)."""
+    mean = x.mean(axis=(0, 2))
+    std = x.std(axis=(0, 2))
+    std = np.where(std < 1e-8, 1.0, std)
+    return mean.astype(np.float32), std.astype(np.float32)
 
 
-def load_dataset(cfg) -> Tuple[Dict, str, int]:
-    path = cfg["data"]["path"]
-    fmt = cfg["data"]["format"]
-    ts_col = cfg["data"]["timestamp_col"]
-    seq_len = int(cfg["data"]["seq_len"])
-    horizon = int(cfg["data"]["horizon"])
-    standardize = bool(cfg["data"]["standardize"])
+def _apply_standardization(
+    x: np.ndarray, mean: np.ndarray, std: np.ndarray
+) -> np.ndarray:
+    """Apply per-channel standardization to (N, C, T)."""
+    x = (x - mean[:, None]) / std[:, None]
+    return x.astype(np.float32)
 
-    if fmt == "parquet":
+
+def load_dataset(cfg: Dict) -> Tuple[Dict[str, TensorDataset], DatasetMeta, int]:
+    """
+    Read parquet/csv defined in cfg['data'], build (N,C,T) sequences,
+    return TensorDatasets for train/val/test, plus metadata.
+    """
+    data_cfg = cfg["data"]
+    path = data_cfg["path"]
+    fmt = data_cfg.get("format", "parquet")
+    ts_col: Optional[str] = data_cfg.get("timestamp_col")
+    seq_len = int(data_cfg["seq_len"])
+    horizon = int(data_cfg["horizon"])
+    train_frac = float(data_cfg.get("train_frac", 0.7))
+    val_frac_of_rest = float(data_cfg.get("val_frac_of_rest", 0.5))
+    standardize = bool(data_cfg.get("standardize", True))
+
+    # load df
+    if fmt.lower() == "parquet":
         df = pd.read_parquet(path)
-    else:
+    elif fmt.lower() == "csv":
         df = pd.read_csv(path)
+    else:
+        raise ValueError(f"Unsupported data format: {fmt}")
 
-    # Infer features if not given
-    features = cfg["data"]["features"]
-    if features is None:
-        features = _infer_features(df, ts_col)
+    # sort by timestamp (chronological)
+    if ts_col and ts_col in df.columns:
+        df = df.sort_values(ts_col).reset_index(drop=True)
 
-    # Heuristics to find bid/ask columns
-    bid_cols = [c for c in df.columns if c.startswith("bid_px_")]
-    ask_cols = [c for c in df.columns if c.startswith("ask_px_")]
-    if len(bid_cols) == 0 or len(ask_cols) == 0:
+    # BAR/LOB shim
+    df = _ensure_mid_and_label(df, horizon=horizon)
+
+    # infer features (numeric except timestamp/label)
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    exclude = set(["label"])
+    if ts_col and ts_col in df.columns:
+        exclude.add(ts_col)
+
+    if data_cfg.get("features") is None:
+        features = [c for c in num_cols if c not in exclude]
+    else:
+        features = list(data_cfg["features"])
+
+    if len(features) == 0:
         raise ValueError(
-            "Expected bid_px_* and ask_px_* columns for mid-price labeling."
+            "No numeric features found. Check data file or 'features' list."
         )
 
-    label, mid = make_labels(df, horizon, bid_cols, ask_cols)
+    # sequences
+    X_seq, y_seq = build_sequences(df, features, df["label"], seq_len)
+    N, C, T = X_seq.shape
+    n_seq = N
 
-    # Standardize features using train split only
-    X = df[features].copy()
-    n = len(df)
-    idx = time_split(n, cfg["data"]["train_frac"], cfg["data"]["val_frac_of_rest"])
-    scaler = StandardScaler()
+    # splits (chronological)
+    train_end = int(math.floor(N * train_frac))
+    rem = N - train_end
+    val_len = int(math.floor(rem * val_frac_of_rest))
+    # test_len = rem - val_len
+
+    X_train = X_seq[:train_end]
+    y_train = y_seq[:train_end]
+    X_val = X_seq[train_end : train_end + val_len]
+    y_val = y_seq[train_end : train_end + val_len]
+    X_test = X_seq[train_end + val_len :]
+    y_test = y_seq[train_end + val_len :]
+
+    # standardize using TRAIN stats
     if standardize:
-        X_train = X.iloc[idx["train"][0] : idx["train"][1]]
-        scaler.fit(X_train.values)
-        X.loc[:, features] = scaler.transform(X.values)
+        mean_c, std_c = _standardize_train_stats(X_train)
+        X_train = _apply_standardization(X_train, mean_c, std_c)
+        X_val = _apply_standardization(X_val, mean_c, std_c)
+        X_test = _apply_standardization(X_test, mean_c, std_c)
     else:
-        scaler = None
+        mean_c = np.zeros((C,), dtype=np.float32)
+        std_c = np.ones((C,), dtype=np.float32)
 
-    # Build sequences
-    X_seq, y_seq = build_sequences(
-        pd.concat([X, label.rename("label")], axis=1), features, label, seq_len
-    )
+    def to_ds(x, y):
+        return TensorDataset(
+            torch.from_numpy(x.astype(np.float32)),
+            torch.from_numpy(y.astype(np.float32)),
+        )
 
-    # Compute splits in sequence space
-    n_seq = len(X_seq)
-    idx_seq = time_split(
-        n_seq, cfg["data"]["train_frac"], cfg["data"]["val_frac_of_rest"]
-    )
-
-    splits = {}
-    for split, (s, e) in idx_seq.items():
-        Xs = X_seq[s:e]
-        ys = y_seq[s:e]
-        ds = SequenceDS(Xs, ys)
-        splits[split] = ds
-
-    meta = {
-        "features": features,
-        "scaler": scaler,
-        "seq_len": seq_len,
-        "n_channels": len(features),
+    splits = {
+        "train": to_ds(X_train, y_train),
+        "val": to_ds(X_val, y_val),
+        "test": to_ds(X_test, y_test),
     }
+
+    meta = DatasetMeta(
+        in_channels=C,
+        seq_len=T,
+        horizon=horizon,
+        n_total_sequences=n_seq,
+        feature_names=features,
+        standardize=standardize,
+    )
     return splits, meta, n_seq
-
-
-def save_scaler(scaler, path):
-    if scaler is None:
-        return
-    with open(path, "wb") as f:
-        pickle.dump(scaler, f)
-
-
-def metrics_binary(y_true, y_prob, threshold=0.5):
-    y_pred = (y_prob >= threshold).astype(int)
-    auc = roc_auc_score(y_true, y_prob) if len(np.unique(y_true)) > 1 else float("nan")
-    acc = accuracy_score(y_true, y_pred)
-    return {"auc": float(auc), "acc": float(acc)}
