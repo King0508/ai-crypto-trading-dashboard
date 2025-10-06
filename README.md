@@ -1,45 +1,39 @@
-# Market Microstructure TCN (PyTorch)
+# Market Microstructure TCN
 
-Forecast short-horizon mid-price moves from limit order book (LOB) snapshots using a compact Temporal Convolutional Network (TCN) in PyTorch. The project includes:
+Build and test short-horizon crypto signals with **PyTorch**.  
+We take a window of recent features, run a **Temporal Convolutional Network (TCN)**, and predict the next move (a few bars ahead). Training/eval is all PyTorch (nn modules, DataLoader, AdamW, early stop). Output includes AUC/ACC and a quick returns-style PnL so you can iterate fast.
 
-- A clean time-series pipeline with point-in-time labeling
-- Chronological train/val/test splits with walk-forward evaluation
-- A small, fast TCN model
-- A synthetic LOB generator to train without proprietary data
+---
 
-## Quickstart
+## Why PyTorch here
 
-```bash
-# 1) Create env (example)
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+- **Causal dilated convs (TCN):** big receptive field without heavy latency; great for 1m/1s streams.
+- **Simple shape contract:** `(batch, channels, time)` → **logit**. Easy to swap models or features.
+- **Fast loops:** pure torch training (BCEWithLogitsLoss, AdamW, grad clip), clean eval, easy to GPU later.
+- **Extensible:** drop in other heads (Transformer/LSTM), add mixed precision, try custom losses.
 
-# 2) Make synthetic data (~2–3 min, small)
-python scripts/simulate_lob.py --n-samples 40000 --seq-len 40 --out data/synth.parquet
+---
 
-# 3) Train
-python src/train.py --config configs/default.yaml
+## What you can use this for
 
-# 4) Evaluate (AUC, accuracy, simple PnL backtest)
-python src/eval.py --config configs/default.yaml --ckpt artifacts/model.pt
+- **Alpha research:** next-bar/next-N move classification on BTC (bars today, LOB later).
+- **Regime flags:** rising vol/trend vs chop as a classifier target.
+- **Signal stacking:** use the prob as a feature in a bigger ensemble.
+- **Latency-sensitive forecasting:** TCN is lightweight and causal; good for near-real-time inference.
+
+---
+
+## Quickstart (Windows, CPU)
+
+### 0) env
+
+```powershell
+# in repo root
+py -3.11 -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+python -m pip install numpy pandas pyarrow pyyaml scikit-learn tqdm
 ```
-
-## Data format
-
-Expected parquet/csv with columns:
-
-- `timestamp` (int or ISO8601)
-- **Features** like `bid_px_1..N`, `ask_px_1..N`, `bid_sz_1..N`, `ask_sz_1..N` (you can add more, e.g., imbalances)
-- Label is generated **point-in-time**: `y = sign(mid[t+H] - mid[t]) ∈ {0,1}`
-
-Use the synthetic generator as a template to adapt to your own LOB dumps.
-
-## Result tracking
-
-- Prints metrics to console
-- Writes artifacts to `artifacts/` (model.pt, scaler.pkl, metrics.json)
-
-## Notes
-
-- Keep your **train/test split by time** (no shuffling across time).
-- Tune `horizon`, `seq_len`, and thresholding in `configs/default.yaml`.
