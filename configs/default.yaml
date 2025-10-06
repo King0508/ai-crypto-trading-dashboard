@@ -25,6 +25,6 @@ train:
   grad_clip_norm: 1.0
   early_stop_patience: 3
 eval:
-  threshold: 0.5 # sigmoid threshold for long/short decisions
-  trade_fee_bps: 1.0 # half-spread+fees in bps per round-trip
+  threshold: 0.45 # sigmoid threshold for long/short decisions
+  trade_fee_bps: 2.0 # half-spread+fees in bps per round-trip
 artifacts_dir: "artifacts"

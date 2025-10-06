@@ -40,25 +40,29 @@ def compute_pnl_from_mid(
     fee_bps: float = 2.0,
 ) -> Tuple[float, float]:
     """
-    Return-based toy PnL:
-      - Each prediction corresponds to the window ending at index 'end'.
-      - next return r = (mid[end+1] - mid[end]) / mid[end]
-      - Position = +1 if prob>=threshold else -1
-      - Fee charged on position flips (bps).
+    Toy returns-based PnL:
+      - window end index t ranges from seq_len-1 .. seq_len-1+(n-1)
+      - return_t = (mid[t+1] - mid[t]) / mid[t]
+      - position_t = +1 if prob_t >= threshold else -1 (applies to return_t)
+      - fee (in bps) charged when position flips at time t
     """
-    assert len(mid) > (seq_len + horizon), "mid series too short for seq_len/horizon."
     start = seq_len - 1
-    ends = np.arange(start, start + len(y_prob))  # window-end indices
 
-    ret = (mid[ends + 1] - mid[ends]) / (mid[ends] + 1e-9)
+    # number of predictions that can map to a valid next-step return
+    n = min(len(y_prob), len(mid) - start - 1)
+    if n <= 1:
+        raise ValueError("Not enough data to compute PnL: n <= 1 after alignment.")
 
-    p = y_prob[:-1]  # align to ret length
-    pos = np.where(p >= threshold, 1.0, -1.0)
+    ends = start + np.arange(n)  # window-end indices
+    ret = (mid[ends + 1] - mid[ends]) / (mid[ends] + 1e-9)  # shape (n,)
 
-    switch = np.abs(np.diff(np.r_[pos[0], pos]))  # 0 (no change) or 2 (flip)
-    fees = (fee_bps / 10000.0) * (switch > 0).astype(float)
+    pos = np.where(y_prob[:n] >= threshold, 1.0, -1.0)  # shape (n,)
 
-    pnl = pos * ret - fees
+    # fee applied when position at t differs from t-1 (include first step comparison with itself)
+    switch = np.abs(np.diff(np.r_[pos[0], pos]))  # shape (n,)
+    fees = (fee_bps / 10000.0) * (switch > 0).astype(float)  # shape (n,)
+
+    pnl = pos * ret - fees  # all length n
     mean = float(np.mean(pnl))
     std = float(np.std(pnl) + 1e-12)
     return mean, std
@@ -105,10 +109,11 @@ def main(args):
     # --- inference on TEST
     y_true_list, y_prob_list = [], []
     sigmoid = torch.nn.Sigmoid()
+
     with torch.no_grad():
         for xb, yb in test_loader:
-            xb = xb.to(device)
-            logits = model(xb)
+            xb = xb.to(device)  # (B, C, T)
+            logits = model(xb)  # (B,) or (B,1)
             if logits.ndim == 2 and logits.shape[1] == 1:
                 logits = logits.squeeze(1)
             probs = sigmoid(logits).detach().cpu().numpy()
@@ -117,22 +122,28 @@ def main(args):
 
     y_prob = np.concatenate(y_prob_list, axis=0) if y_prob_list else np.array([])
     y_true = np.concatenate(y_true_list, axis=0) if y_true_list else np.array([])
+
     if y_prob.size == 0:
-        raise RuntimeError("No test predictions produced. Check dataset/test split.")
+        raise RuntimeError(
+            "No test predictions produced. Check your dataset/test split sizes."
+        )
 
     # --- metrics
     results = {}
+
+    # AUC (guard against single-class edge case)
     try:
         auc = roc_auc_score(y_true, y_prob)
     except Exception:
         auc = float("nan")
     results["test_auc"] = float(auc)
 
+    # Accuracy at threshold
     y_pred = (y_prob >= th).astype(int)
     acc = accuracy_score(y_true, y_pred)
     results["test_acc"] = float(acc)
 
-    # --- returns-based toy PnL
+    # --- returns-based toy PnL (read full mid series)
     data_cfg = cfg["data"]
     if data_cfg.get("format", "parquet").lower() == "parquet":
         df_full = pd.read_parquet(data_cfg["path"])
@@ -144,7 +155,7 @@ def main(args):
     elif "close" in df_full.columns:
         mid = df_full["close"].astype(float).values
     else:
-        raise ValueError("PnL needs 'mid' or 'close' in the data file.")
+        raise ValueError("PnL needs 'mid' or 'close' column in the data file.")
 
     mean_pnl, std_pnl = compute_pnl_from_mid(
         mid=mid,
@@ -155,15 +166,24 @@ def main(args):
         fee_bps=fee_bps,
     )
     sr = mean_pnl / (std_pnl + 1e-12)
+
     results["toy_mean_pnl"] = float(mean_pnl)
     results["toy_sr"] = float(sr)
 
+    # --- print JSON
     print(json.dumps(results, indent=2))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, required=True)
-    parser.add_argument("--ckpt", type=str, required=True)
+    parser.add_argument(
+        "--config", type=str, required=True, help="Path to YAML config."
+    )
+    parser.add_argument(
+        "--ckpt",
+        type=str,
+        required=True,
+        help="Path to model checkpoint (e.g., artifacts/model.pt).",
+    )
     args = parser.parse_args()
     main(args)
