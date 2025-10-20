@@ -191,7 +191,7 @@ class BinanceKlineStream:
     
     def on_open(self, ws):
         """Handle WebSocket open."""
-        logger.info(f"✓ Connected to {self.ws_url}")
+        logger.info(f"[OK] Connected to {self.ws_url}")
         self.reconnect_delay = 1
         self.reconnect_attempts = 0
     
@@ -246,7 +246,7 @@ class BinanceKlineStream:
         if self.ws_thread and self.ws_thread.is_alive():
             self.ws_thread.join(timeout=5)
         
-        logger.info("✓ Stream stopped")
+        logger.info("[OK] Stream stopped")
     
     def wait_for_bars(self, min_bars: int = 60, timeout: float = 300):
         """
@@ -268,7 +268,7 @@ class BinanceKlineStream:
             
             time.sleep(1)
         
-        logger.info(f"✓ Ready with {len(self.bars)} bars")
+        logger.info(f"[OK] Ready with {len(self.bars)} bars")
         return True
 
 

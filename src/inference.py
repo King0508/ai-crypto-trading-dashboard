@@ -95,7 +95,7 @@ class InferenceEngine:
         
         self.sigmoid = nn.Sigmoid()
         
-        print(f"✓ Inference engine loaded")
+        print(f"[OK] Inference engine loaded")
         print(f"  Model: {model_path}")
         print(f"  Features: {len(self.feature_names)}")
         print(f"  Seq length: {self.meta['seq_len']}")
