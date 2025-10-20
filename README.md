@@ -56,10 +56,10 @@
 # 1. Setup environment
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r alpha_tcn_starter/requirements.txt
+pip install -r ai-crypto-trading-dashboard/requirements.txt
 
 # 2. Download BTC data (3 months recommended)
-cd alpha_tcn_starter
+cd ai-crypto-trading-dashboard
 python scripts/download_binance_historical.py --symbol BTCUSDT --days 90 --out data/btcusdt_1m.parquet
 
 # 3. Train the model
@@ -187,7 +187,7 @@ streamlit run dashboard/app.py
 ## 📁 Project Structure
 
 ```
-alpha_tcn_starter/
+ai-crypto-trading-dashboard/
 ├── configs/
 │   ├── default.yaml      # Training configuration
 │   └── live.yaml         # Live/simulation settings

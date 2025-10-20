@@ -1,5 +1,5 @@
 # PowerShell script to launch the trading dashboard
-# Run this from the alpha_tcn_starter directory
+# Run this from the ai-crypto-trading-dashboard directory
 
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host "  Real-time Crypto Trading Dashboard Launcher" -ForegroundColor Cyan

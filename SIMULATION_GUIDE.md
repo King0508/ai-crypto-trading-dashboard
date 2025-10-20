@@ -5,7 +5,7 @@ Test your trading dashboard in **minutes** instead of hours!
 ## 🚀 Launch Simulation Dashboard
 
 ```powershell
-cd alpha_tcn_starter
+cd ai-crypto-trading-dashboard
 streamlit run dashboard/app_sim.py
 ```
 
@@ -28,17 +28,20 @@ Browser opens at `http://localhost:8501`
 ## 🎛️ Controls
 
 ### **Speed Options**
+
 - **1x**: Real-time (1 bar per second)
 - **5x**: 5 bars per second
 - **10x**: 10 bars per second (recommended)
 - **50x**: Ultra-fast testing
 
 ### **Buttons**
+
 - **▶️ START**: Begin simulation
 - **⏹️ STOP**: Stop simulation
 - **🔄 RESTART**: Replay from beginning
 
 ### **Progress Bar**
+
 Shows how much historical data has been processed
 
 ---
@@ -48,6 +51,7 @@ Shows how much historical data has been processed
 ### **Timeline**
 
 **At 10x speed:**
+
 ```
 0:00  → Click START
 0:06  → 60 bars collected, charts appear!
@@ -57,6 +61,7 @@ Shows how much historical data has been processed
 ```
 
 **At 1x speed:**
+
 ```
 0:00  → Click START
 1:00  → 60 bars collected
@@ -68,17 +73,20 @@ Shows how much historical data has been processed
 ### **Dashboard Features**
 
 1. **Price Chart**
+
    - Candlestick display
    - SMA(20) and SMA(60) moving averages
    - RSI indicator below
    - Volume bars
 
 2. **Signals**
+
    - 🟢 Green triangles = LONG (buy)
    - 🔴 Red triangles = SHORT (sell)
    - BUY/SELL text on chart
 
 3. **Live Metrics**
+
    - Current price with % change
    - Signal (LONG/SHORT/NEUTRAL)
    - Position size recommendation
@@ -95,6 +103,7 @@ Shows how much historical data has been processed
 ## 🎯 Use Cases
 
 ### **1. Quick Testing**
+
 ```powershell
 # See if everything works in 1 minute
 streamlit run dashboard/app_sim.py
@@ -102,6 +111,7 @@ streamlit run dashboard/app_sim.py
 ```
 
 ### **2. Strategy Testing**
+
 ```powershell
 # Test different thresholds
 1. Click START at 10x speed
@@ -113,6 +123,7 @@ streamlit run dashboard/app_sim.py
 ```
 
 ### **3. Demo to Others**
+
 ```powershell
 # Show how the system works without waiting
 - Use 10x-50x speed
@@ -122,6 +133,7 @@ streamlit run dashboard/app_sim.py
 ```
 
 ### **4. Training Different Models**
+
 ```powershell
 # Compare model performance
 1. Train model A
@@ -139,12 +151,12 @@ Edit `configs/live.yaml` to change:
 
 ```yaml
 # Signal thresholds
-long_threshold: 0.55   # Higher = fewer LONGs
-short_threshold: 0.45  # Lower = fewer SHORTs
+long_threshold: 0.55 # Higher = fewer LONGs
+short_threshold: 0.45 # Lower = fewer SHORTs
 
 # Position sizing
-capital: 10000.0       # Your capital
-risk_per_trade: 0.02   # Risk 2% per trade
+capital: 10000.0 # Your capital
+risk_per_trade: 0.02 # Risk 2% per trade
 
 # Model paths (use existing model)
 model_checkpoint: "artifacts/model.pt"
@@ -156,27 +168,29 @@ meta_path: "artifacts/meta.json"
 
 ## 🆚 Simulation vs Live
 
-| Feature | Simulation | Live |
-|---------|-----------|------|
-| **Speed** | 1x-50x (adjustable) | 1x (real-time) |
-| **Data Source** | Historical parquet | Binance WebSocket |
-| **VPN Required** | ❌ No | ✅ Yes |
-| **Wait Time** | 6 sec (at 10x) | 60 min |
-| **Repeatable** | ✅ Yes (restart) | ❌ No |
-| **Best For** | Testing, learning | Real trading |
+| Feature          | Simulation          | Live              |
+| ---------------- | ------------------- | ----------------- |
+| **Speed**        | 1x-50x (adjustable) | 1x (real-time)    |
+| **Data Source**  | Historical parquet  | Binance WebSocket |
+| **VPN Required** | ❌ No               | ✅ Yes            |
+| **Wait Time**    | 6 sec (at 10x)      | 60 min            |
+| **Repeatable**   | ✅ Yes (restart)    | ❌ No             |
+| **Best For**     | Testing, learning   | Real trading      |
 
 ---
 
 ## 🐛 Troubleshooting
 
 ### **"No module named 'simulation_stream'"**
+
 ```powershell
-# Make sure you're in alpha_tcn_starter directory
-cd alpha_tcn_starter
+# Make sure you're in ai-crypto-trading-dashboard directory
+cd ai-crypto-trading-dashboard
 streamlit run dashboard/app_sim.py
 ```
 
 ### **"Model files not found"**
+
 ```powershell
 # Check if artifacts exist
 dir artifacts
@@ -186,6 +200,7 @@ python src/train.py --config configs/default.yaml
 ```
 
 ### **"Data file not found"**
+
 ```powershell
 # Check if data exists
 dir data\btcusdt_1m.parquet
@@ -195,11 +210,13 @@ python scripts/download_binance_historical.py --days 90
 ```
 
 ### **Charts not showing up**
+
 - Wait for "Collecting initial data (60/60 bars)" message
 - At 10x speed, this takes only 6 seconds
 - If stuck at 0 bars, restart the dashboard
 
 ### **Simulation runs too fast/slow**
+
 - Use dropdown to change speed
 - 1x = realistic speed
 - 10x = good balance (recommended)
@@ -214,11 +231,13 @@ python scripts/download_binance_historical.py --days 90
 2. **Use RESTART** to test different strategies on same data
 
 3. **Compare metrics**:
+
    - Win Rate > 52% is good for crypto
    - Sharpe Ratio > 1.0 is decent
    - More signals doesn't mean better!
 
 4. **Watch for patterns**:
+
    - Does model work better in volatile periods?
    - Are SHORT signals less accurate than LONG?
    - How does changing thresholds affect win rate?
@@ -235,12 +254,14 @@ python scripts/download_binance_historical.py --days 90
 Once you're happy with simulation mode:
 
 ### **1. Train Fresh Model** (if needed)
+
 ```powershell
 python scripts/download_binance_historical.py --days 90
 python src/train.py --config configs/default.yaml
 ```
 
 ### **2. Switch to Live Mode**
+
 ```powershell
 # Connect VPN (Netherlands or non-US)
 streamlit run dashboard/app_pro.py
@@ -248,6 +269,7 @@ streamlit run dashboard/app_pro.py
 ```
 
 ### **3. Flask + React Version** (future)
+
 - True Robinhood design
 - Custom fonts and animations
 - Mobile responsive
@@ -268,4 +290,3 @@ streamlit run dashboard/app_pro.py
 ---
 
 **Ready to test?** Run `streamlit run dashboard/app_sim.py` and see your trading system in action! 🚀
-

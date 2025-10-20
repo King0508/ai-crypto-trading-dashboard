@@ -79,7 +79,7 @@ A complete end-to-end system for real-time cryptocurrency trading signals:
 ## 📁 File Structure
 
 ```
-alpha_tcn_starter/
+ai-crypto-trading-dashboard/
 ├── configs/
 │   ├── default.yaml           # Training config
 │   └── live.yaml              # Live trading config (NEW)

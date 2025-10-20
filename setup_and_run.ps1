@@ -1,5 +1,5 @@
 # Full Setup and Launch Script for Real-time Trading Dashboard
-# Run this from the alpha_tcn_starter directory
+# Run this from the ai-crypto-trading-dashboard directory
 
 param(
     [switch]$SkipDownload,

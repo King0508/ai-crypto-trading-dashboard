@@ -15,7 +15,7 @@ pip install websocket-client streamlit plotly requests
 ## Step 2: Download Data (2-3 min)
 
 ```powershell
-cd alpha_tcn_starter
+cd ai-crypto-trading-dashboard
 
 # Download 90 days of BTC data from Binance
 python scripts/download_binance_historical.py --symbol BTCUSDT --days 90 --out data/btcusdt_1m.parquet
