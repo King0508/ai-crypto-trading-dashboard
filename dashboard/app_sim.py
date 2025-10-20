@@ -32,7 +32,7 @@ st.set_page_config(
     page_title="Crypto Trading Sim",
     page_icon="🎮",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # Custom CSS for Robinhood-style dark theme
@@ -561,6 +561,82 @@ def main():
 
     # Load config
     cfg = load_config("configs/live.yaml")
+    
+    # Settings panel in sidebar
+    with st.sidebar:
+        st.markdown("## ⚙️ **Trading Settings**")
+        
+        # Preset or Custom thresholds
+        threshold_mode = st.radio(
+            "Threshold Mode",
+            ["Preset", "Custom"],
+            horizontal=True,
+        )
+        
+        if threshold_mode == "Preset":
+            preset = st.selectbox(
+                "Strategy Preset",
+                ["Conservative (Fewer, Higher Quality)", "Balanced (Medium Signals)", "Aggressive (More Signals)"],
+                index=1,
+            )
+            
+            if "Conservative" in preset:
+                long_thresh = 0.55
+                short_thresh = 0.45
+                st.info("🛡️ Conservative: Only high-confidence signals")
+            elif "Balanced" in preset:
+                long_thresh = 0.52
+                short_thresh = 0.48
+                st.info("⚖️ Balanced: Medium signal frequency")
+            else:  # Aggressive
+                long_thresh = 0.505
+                short_thresh = 0.495
+                st.success("⚡ Aggressive: Maximum signals (testing)")
+        else:  # Custom
+            col1, col2 = st.columns(2)
+            with col1:
+                long_thresh = st.number_input(
+                    "LONG Threshold",
+                    min_value=0.50,
+                    max_value=0.99,
+                    value=0.52,
+                    step=0.01,
+                    help="Probability needed to trigger LONG signal"
+                )
+            with col2:
+                short_thresh = st.number_input(
+                    "SHORT Threshold",
+                    min_value=0.01,
+                    max_value=0.50,
+                    value=0.48,
+                    step=0.01,
+                    help="Probability needed to trigger SHORT signal"
+                )
+        
+        st.markdown("---")
+        
+        # Position sizing settings
+        st.markdown("### 💰 Position Sizing")
+        capital = st.number_input(
+            "Total Capital ($)",
+            min_value=100.0,
+            max_value=10000000.0,
+            value=float(cfg.get("capital", 10000.0)),
+            step=1000.0,
+        )
+        
+        risk_pct = st.slider(
+            "Risk Per Trade (%)",
+            min_value=0.1,
+            max_value=10.0,
+            value=float(cfg.get("risk_per_trade", 0.02)) * 100,
+            step=0.1,
+            help="Percentage of capital to risk per trade"
+        )
+        risk_per_trade = risk_pct / 100
+        
+        st.caption(f"Base position size: ${capital * risk_per_trade:,.2f}")
+        st.caption(f"Range: ${capital * risk_per_trade * 0.5:,.2f} - ${capital * risk_per_trade * 1.5:,.2f}")
 
     # Control panel - use container for stable positioning
     with control_panel_container:
@@ -570,25 +646,28 @@ def main():
             if st.button("▶️ START", use_container_width=True, type="primary", key="start_btn"):
                 if not st.session_state.is_running:
                     try:
-                        # Load inference engine
+                        # Load inference engine with user-selected settings
                         st.session_state.engine = InferenceEngine(
                             model_path=cfg["model_checkpoint"],
                             scaler_path=cfg["scaler_path"],
                             meta_path=cfg["meta_path"],
                             device=cfg.get("device", "cpu"),
-                            long_threshold=float(cfg.get("long_threshold", 0.55)),
-                            short_threshold=float(cfg.get("short_threshold", 0.45)),
-                            capital=float(cfg.get("capital", 10000.0)),
-                            risk_per_trade=float(cfg.get("risk_per_trade", 0.02)),
+                            long_threshold=float(long_thresh),
+                            short_threshold=float(short_thresh),
+                            capital=float(capital),
+                            risk_per_trade=float(risk_per_trade),
                         )
 
                         # Create callback for new bars
+                        # Capture engine and predictions in closure to avoid threading issues
+                        engine = st.session_state.engine
+                        predictions = st.session_state.predictions
+
                         def on_new_bar(df: pd.DataFrame, bar: Dict):
-                            result = st.session_state.engine.predict(
+                            result = engine.predict(
                                 df, current_price=bar["close"], timestamp=bar["timestamp"]
                             )
-                            st.session_state.predictions.append(result)
-                            st.session_state.last_update = datetime.now()
+                            predictions.append(result)
 
                         # Start simulation stream
                         st.session_state.stream = SimulationStream(
