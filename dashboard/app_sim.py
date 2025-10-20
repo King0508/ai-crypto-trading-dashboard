@@ -470,6 +470,53 @@ def create_main_chart(
     return fig
 
 
+def calculate_all_time_pnl(predictions: List[PredictionResult]) -> Dict:
+    """Calculate all-time PnL and trade stats across ALL predictions."""
+    if len(predictions) < 11:
+        return {"all_time_pnl": 0.0, "total_trades": 0, "winning_trades": 0, "losing_trades": 0}
+    
+    total_pnl = 0.0
+    total_trades = 0
+    winning_trades = 0
+    losing_trades = 0
+    
+    # For each prediction, calculate PnL by looking 10 bars ahead
+    for i in range(len(predictions) - 10):
+        pred = predictions[i]
+        
+        # Only calculate PnL for non-NEUTRAL signals
+        if pred.signal == "NEUTRAL":
+            continue
+            
+        total_trades += 1
+        
+        # Get exit price 10 bars later
+        exit_pred = predictions[i + 10]
+        entry_price = pred.price
+        exit_price = exit_pred.price
+        
+        # Calculate return
+        ret = (exit_price - entry_price) / entry_price
+        if pred.signal == "SHORT":
+            ret = -ret
+            
+        # Calculate PnL
+        pnl = ret * pred.position_size_usd
+        total_pnl += pnl
+        
+        if pnl > 0:
+            winning_trades += 1
+        else:
+            losing_trades += 1
+    
+    return {
+        "all_time_pnl": total_pnl,
+        "total_trades": total_trades,
+        "winning_trades": winning_trades,
+        "losing_trades": losing_trades,
+    }
+
+
 def calculate_advanced_metrics(
     predictions: List[PredictionResult], df: pd.DataFrame
 ) -> Dict:
@@ -717,22 +764,6 @@ def main():
                                 timestamp=bar["timestamp"],
                             )
                             predictions.append(result)
-                            
-                            # Track all-time PnL for non-NEUTRAL signals
-                            if result.signal != "NEUTRAL":
-                                st.session_state.total_trades += 1
-                                # Calculate PnL after 10 bars
-                                if len(predictions) >= 11:
-                                    old_pred = predictions[-11]
-                                    if old_pred.signal != "NEUTRAL":
-                                        # Calculate actual PnL for this trade
-                                        entry_price = old_pred.price
-                                        exit_price = bar["close"]
-                                        ret = (exit_price - entry_price) / entry_price
-                                        if old_pred.signal == "SHORT":
-                                            ret = -ret
-                                        pnl = ret * old_pred.position_size_usd
-                                        st.session_state.all_time_pnl += pnl
 
                         # Start simulation stream
                         st.session_state.stream = SimulationStream(
