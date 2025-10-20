@@ -2,6 +2,7 @@
 Inference engine for real-time predictions.
 Loads trained model + scaler and provides predictions with position sizing.
 """
+
 from __future__ import annotations
 
 import os
@@ -21,6 +22,7 @@ from model import TCN
 @dataclass
 class PredictionResult:
     """Result from model inference."""
+
     probability: float  # Probability of price going up
     signal: str  # 'LONG', 'SHORT', or 'NEUTRAL'
     confidence: float  # Distance from threshold (0-1 scaled)
@@ -34,7 +36,7 @@ class InferenceEngine:
     """
     Handles model loading and inference for live predictions.
     """
-    
+
     def __init__(
         self,
         model_path: str,
@@ -48,7 +50,7 @@ class InferenceEngine:
     ):
         """
         Initialize inference engine.
-        
+
         Args:
             model_path: Path to model checkpoint (.pt file)
             scaler_path: Path to scaler pickle file
@@ -64,19 +66,19 @@ class InferenceEngine:
         self.short_threshold = short_threshold
         self.capital = capital
         self.risk_per_trade = risk_per_trade
-        
+
         # Load metadata
         with open(meta_path, "r") as f:
             self.meta = json.load(f)
-        
+
         # Load scaler
         with open(scaler_path, "rb") as f:
             self.scaler = pickle.load(f)
-        
+
         self.feature_names = self.scaler["features"]
         self.mean = self.scaler["mean"]
         self.std = self.scaler["std"]
-        
+
         # Load model
         model_cfg = self.meta["model_config"]
         self.model = TCN(
@@ -86,51 +88,53 @@ class InferenceEngine:
             kernel_size=int(model_cfg.get("kernel_size", 3)),
             dropout=float(model_cfg.get("dropout", 0.1)),
         ).to(self.device)
-        
+
         # Load weights
         ckpt = torch.load(model_path, map_location=self.device)
         state_dict = ckpt.get("model_state_dict", ckpt)
         self.model.load_state_dict(state_dict)
         self.model.eval()
-        
+
         self.sigmoid = nn.Sigmoid()
-        
+
         print(f"[OK] Inference engine loaded")
         print(f"  Model: {model_path}")
         print(f"  Features: {len(self.feature_names)}")
         print(f"  Seq length: {self.meta['seq_len']}")
         print(f"  Horizon: {self.meta['horizon']} bars")
-        print(f"  Thresholds: LONG>{self.long_threshold:.2f}, SHORT<{self.short_threshold:.2f}")
-    
+        print(
+            f"  Thresholds: LONG>{self.long_threshold:.2f}, SHORT<{self.short_threshold:.2f}"
+        )
+
     def prepare_features(self, df: pd.DataFrame) -> np.ndarray:
         """
         Prepare features from a DataFrame with the correct ordering.
-        
+
         Args:
             df: DataFrame with feature columns
-        
+
         Returns:
             Array of shape (1, C, T) ready for model
         """
         seq_len = self.meta["seq_len"]
-        
+
         if len(df) < seq_len:
             raise ValueError(f"Need at least {seq_len} bars, got {len(df)}")
-        
+
         # Take last seq_len bars
         df = df.tail(seq_len).copy()
-        
+
         # Extract features in correct order
         X = df[self.feature_names].values  # (T, C)
-        
+
         # Standardize using saved stats
         X = (X - self.mean) / self.std
-        
+
         # Reshape to (1, C, T) for Conv1d
         X = X.T[np.newaxis, :, :]  # (1, C, T)
-        
+
         return X.astype(np.float32)
-    
+
     def predict(
         self,
         df: pd.DataFrame,
@@ -139,40 +143,51 @@ class InferenceEngine:
     ) -> PredictionResult:
         """
         Make a prediction from recent bars.
-        
+
         Args:
             df: DataFrame with at least seq_len bars of features
             current_price: Current price (uses last close if None)
             timestamp: Timestamp of prediction (uses now if None)
-        
+
         Returns:
             PredictionResult with signal and position sizing
         """
         # Prepare input tensor
         X = self.prepare_features(df)
         X_tensor = torch.from_numpy(X).to(self.device)
-        
+
         # Run inference
         with torch.no_grad():
             logits = self.model(X_tensor)
             if logits.ndim == 2 and logits.shape[1] == 1:
                 logits = logits.squeeze(1)
             prob = self.sigmoid(logits).item()
-        
+
+        # DEBUG: Print probability to see what model is predicting
+        print(
+            f"[PRED] Prob: {prob:.4f} | Thresholds: L>{self.long_threshold:.3f}, S<{self.short_threshold:.3f}",
+            end=" ",
+        )
+
         # Determine signal
         if prob >= self.long_threshold:
             signal = "LONG"
             confidence = (prob - self.long_threshold) / (1.0 - self.long_threshold)
+            print(f"-> LONG (conf: {confidence:.2f})")
         elif prob <= self.short_threshold:
             signal = "SHORT"
             confidence = (self.short_threshold - prob) / self.short_threshold
+            print(f"-> SHORT (conf: {confidence:.2f})")
         else:
             signal = "NEUTRAL"
+            print(f"-> NEUTRAL")
             # Distance from nearest threshold
             dist_to_long = self.long_threshold - prob
             dist_to_short = prob - self.short_threshold
-            confidence = 1.0 - min(dist_to_long, dist_to_short) / (self.long_threshold - self.short_threshold)
-        
+            confidence = 1.0 - min(dist_to_long, dist_to_short) / (
+                self.long_threshold - self.short_threshold
+            )
+
         # Position sizing (simple Kelly-ish approach)
         # For LONG/SHORT: scale by confidence and risk_per_trade
         if signal in ["LONG", "SHORT"]:
@@ -181,16 +196,16 @@ class InferenceEngine:
             position_size_usd = base_size * (0.5 + confidence)
         else:
             position_size_usd = 0.0
-        
+
         position_size_pct = (position_size_usd / self.capital) * 100
-        
+
         # Get price and timestamp
         if current_price is None:
             current_price = float(df["close"].iloc[-1])
-        
+
         if timestamp is None:
             timestamp = pd.Timestamp.now(tz="UTC")
-        
+
         return PredictionResult(
             probability=prob,
             signal=signal,
@@ -200,7 +215,7 @@ class InferenceEngine:
             timestamp=timestamp,
             price=current_price,
         )
-    
+
     def predict_from_window(
         self,
         window: np.ndarray,
@@ -209,26 +224,26 @@ class InferenceEngine:
     ) -> PredictionResult:
         """
         Make prediction from a prepared feature window.
-        
+
         Args:
             window: Pre-standardized feature array of shape (seq_len, n_features)
             current_price: Current price
             timestamp: Current timestamp
-        
+
         Returns:
             PredictionResult
         """
         # Reshape to (1, C, T)
         X = window.T[np.newaxis, :, :].astype(np.float32)
         X_tensor = torch.from_numpy(X).to(self.device)
-        
+
         # Run inference
         with torch.no_grad():
             logits = self.model(X_tensor)
             if logits.ndim == 2 and logits.shape[1] == 1:
                 logits = logits.squeeze(1)
             prob = self.sigmoid(logits).item()
-        
+
         # Determine signal
         if prob >= self.long_threshold:
             signal = "LONG"
@@ -240,17 +255,19 @@ class InferenceEngine:
             signal = "NEUTRAL"
             dist_to_long = self.long_threshold - prob
             dist_to_short = prob - self.short_threshold
-            confidence = 1.0 - min(dist_to_long, dist_to_short) / (self.long_threshold - self.short_threshold)
-        
+            confidence = 1.0 - min(dist_to_long, dist_to_short) / (
+                self.long_threshold - self.short_threshold
+            )
+
         # Position sizing
         if signal in ["LONG", "SHORT"]:
             base_size = self.capital * self.risk_per_trade
             position_size_usd = base_size * (0.5 + confidence)
         else:
             position_size_usd = 0.0
-        
+
         position_size_pct = (position_size_usd / self.capital) * 100
-        
+
         return PredictionResult(
             probability=prob,
             signal=signal,
@@ -265,14 +282,14 @@ class InferenceEngine:
 def test_inference():
     """Test inference on sample data."""
     import argparse
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="artifacts/model.pt")
     parser.add_argument("--scaler", type=str, default="artifacts/scaler.pkl")
     parser.add_argument("--meta", type=str, default="artifacts/meta.json")
     parser.add_argument("--data", type=str, default="data/btcusdt_1m.parquet")
     args = parser.parse_args()
-    
+
     # Load engine
     engine = InferenceEngine(
         model_path=args.model,
@@ -281,23 +298,24 @@ def test_inference():
         capital=10000.0,
         risk_per_trade=0.02,
     )
-    
+
     # Load some test data
     df = pd.read_parquet(args.data)
     print(f"\nLoaded {len(df)} bars from {args.data}")
-    
+
     # Make predictions on last 5 windows
     seq_len = engine.meta["seq_len"]
     for i in range(-5, 0):
         window_df = df.iloc[i - seq_len : i]
         result = engine.predict(window_df)
-        
+
         print(f"\n[{result.timestamp}] Price: ${result.price:.2f}")
         print(f"  Probability: {result.probability:.3f}")
         print(f"  Signal: {result.signal} (confidence: {result.confidence:.2f})")
-        print(f"  Position: ${result.position_size_usd:.2f} ({result.position_size_pct:.1f}%)")
+        print(
+            f"  Position: ${result.position_size_usd:.2f} ({result.position_size_pct:.1f}%)"
+        )
 
 
 if __name__ == "__main__":
     test_inference()
-
