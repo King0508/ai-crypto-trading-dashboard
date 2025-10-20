@@ -9,8 +9,8 @@ meta_path: "artifacts/meta.json"
 
 # Inference settings
 device: "cpu"  # "cuda" or "cpu"
-long_threshold: 0.52  # Probability threshold for LONG signal
-short_threshold: 0.48  # Probability threshold for SHORT signal
+long_threshold: 0.505  # Probability threshold for LONG signal (AGGRESSIVE for testing)
+short_threshold: 0.495  # Probability threshold for SHORT signal (AGGRESSIVE for testing)
 
 # Position sizing
 capital: 10000.0  # Total capital in USD
