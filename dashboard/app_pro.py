@@ -32,7 +32,7 @@ st.set_page_config(
     page_title="Crypto Trading Pro",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # Custom CSS for Robinhood-style dark theme
@@ -573,19 +573,8 @@ def calculate_advanced_metrics(
 def main():
     """Main professional dashboard."""
 
-    # Top bar with logo and status
-    col1, col2, col3 = st.columns([2, 6, 2])
-
-    with col1:
-        st.markdown("# 📈 **Crypto Pro**")
-
-    with col3:
-        # Quick controls
-        if st.button("⚙️ Settings", use_container_width=True):
-            st.session_state.show_settings = not st.session_state.get(
-                "show_settings", False
-            )
-
+    # Top bar with logo
+    st.markdown("# 📈 **Crypto Pro**")
     st.markdown("---")
 
     # Initialize session state
@@ -599,77 +588,95 @@ def main():
         st.session_state.last_update = None
     if "is_running" not in st.session_state:
         st.session_state.is_running = False
-    if "show_settings" not in st.session_state:
-        st.session_state.show_settings = False
 
-    # Settings panel (collapsible)
-    if st.session_state.show_settings:
-        with st.expander("⚙️ Configuration", expanded=True):
-            col1, col2, col3, col4 = st.columns(4)
-
+    # Load config
+    cfg = load_config("configs/live.yaml")
+    
+    # Settings panel in sidebar
+    with st.sidebar:
+        st.markdown("## ⚙️ **Trading Settings**")
+        
+        # Symbol
+        symbol = st.text_input("Symbol", value=cfg.get("symbol", "btcusdt"))
+        
+        st.markdown("---")
+        
+        # Preset or Custom thresholds
+        threshold_mode = st.radio(
+            "Threshold Mode",
+            ["Preset", "Custom"],
+            horizontal=True,
+        )
+        
+        if threshold_mode == "Preset":
+            preset = st.selectbox(
+                "Strategy Preset",
+                ["Conservative (Fewer, Higher Quality)", "Balanced (Medium Signals)", "Aggressive (More Signals)"],
+                index=1,
+            )
+            
+            if "Conservative" in preset:
+                long_th = 0.55
+                short_th = 0.45
+                st.info("🛡️ Conservative: Only high-confidence signals")
+            elif "Balanced" in preset:
+                long_th = 0.52
+                short_th = 0.48
+                st.info("⚖️ Balanced: Medium signal frequency")
+            else:  # Aggressive
+                long_th = 0.505
+                short_th = 0.495
+                st.success("⚡ Aggressive: Maximum signals (testing)")
+        else:  # Custom
+            col1, col2 = st.columns(2)
             with col1:
-                config_path = st.text_input("Config", value="configs/live.yaml")
-
-            try:
-                cfg = load_config(config_path)
-            except:
-                st.error("Config file not found")
-                return
-
+                long_th = st.number_input(
+                    "LONG Threshold",
+                    min_value=0.50,
+                    max_value=0.99,
+                    value=0.52,
+                    step=0.01,
+                    help="Probability needed to trigger LONG signal"
+                )
             with col2:
-                symbol = st.text_input("Symbol", value=cfg.get("symbol", "btcusdt"))
-
-            with col3:
-                capital = st.number_input(
-                    "Capital",
-                    min_value=100.0,
-                    value=float(cfg.get("capital", 10000.0)),
-                    step=1000.0,
+                short_th = st.number_input(
+                    "SHORT Threshold",
+                    min_value=0.01,
+                    max_value=0.50,
+                    value=0.48,
+                    step=0.01,
+                    help="Probability needed to trigger SHORT signal"
                 )
-
-            with col4:
-                risk = (
-                    st.slider(
-                        "Risk %",
-                        min_value=0.5,
-                        max_value=10.0,
-                        value=float(cfg.get("risk_per_trade", 0.02)) * 100,
-                        step=0.5,
-                    )
-                    / 100
-                )
-
-            col5, col6, col7 = st.columns(3)
-
-            with col5:
-                long_th = st.slider(
-                    "Long Threshold",
-                    0.5,
-                    0.9,
-                    float(cfg.get("long_threshold", 0.55)),
-                    0.01,
-                )
-
-            with col6:
-                short_th = st.slider(
-                    "Short Threshold",
-                    0.1,
-                    0.5,
-                    float(cfg.get("short_threshold", 0.45)),
-                    0.01,
-                )
-
-            with col7:
-                chart_bars = st.slider("Chart Bars", 50, 500, 100, 10)
-    else:
-        # Use defaults
-        cfg = load_config("configs/live.yaml")
-        symbol = cfg.get("symbol", "btcusdt")
-        capital = float(cfg.get("capital", 10000.0))
-        risk = float(cfg.get("risk_per_trade", 0.02))
-        long_th = float(cfg.get("long_threshold", 0.55))
-        short_th = float(cfg.get("short_threshold", 0.45))
-        chart_bars = 100
+        
+        st.markdown("---")
+        
+        # Position sizing settings
+        st.markdown("### 💰 Position Sizing")
+        capital = st.number_input(
+            "Total Capital ($)",
+            min_value=100.0,
+            max_value=10000000.0,
+            value=float(cfg.get("capital", 10000.0)),
+            step=1000.0,
+        )
+        
+        risk_pct = st.slider(
+            "Risk Per Trade (%)",
+            min_value=0.1,
+            max_value=10.0,
+            value=float(cfg.get("risk_per_trade", 0.02)) * 100,
+            step=0.1,
+            help="Percentage of capital to risk per trade"
+        )
+        risk = risk_pct / 100
+        
+        st.caption(f"Base position size: ${capital * risk:,.2f}")
+        st.caption(f"Range: ${capital * risk * 0.5:,.2f} - ${capital * risk * 1.5:,.2f}")
+        
+        st.markdown("---")
+        
+        # Chart settings
+        chart_bars = st.slider("Chart Bars", 50, 500, 100, 10)
 
     # Control buttons
     col1, col2, col3 = st.columns([1, 1, 8])
@@ -689,12 +696,15 @@ def main():
                         risk_per_trade=risk,
                     )
 
+                    # Capture engine and predictions in closure to avoid threading issues
+                    engine = st.session_state.engine
+                    predictions = st.session_state.predictions
+
                     def on_new_bar(df: pd.DataFrame, bar: Dict):
-                        result = st.session_state.engine.predict(
+                        result = engine.predict(
                             df, current_price=bar["close"], timestamp=bar["timestamp"]
                         )
-                        st.session_state.predictions.append(result)
-                        st.session_state.last_update = datetime.now()
+                        predictions.append(result)
 
                     st.session_state.stream = BinanceKlineStream(
                         symbol=symbol,
