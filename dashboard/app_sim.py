@@ -470,15 +470,21 @@ def create_main_chart(
     return fig
 
 
-def calculate_all_time_pnl(predictions: List[PredictionResult]) -> Dict:
-    """Calculate all-time PnL and trade stats across ALL predictions."""
+def calculate_all_time_pnl(predictions: List[PredictionResult], min_confidence: float = 0.0) -> Dict:
+    """Calculate all-time PnL and trade stats across ALL predictions.
+    
+    Args:
+        predictions: List of prediction results
+        min_confidence: Minimum confidence threshold to filter trades (0.0 to 1.0)
+    """
     if len(predictions) < 11:
-        return {"all_time_pnl": 0.0, "total_trades": 0, "winning_trades": 0, "losing_trades": 0}
+        return {"all_time_pnl": 0.0, "total_trades": 0, "winning_trades": 0, "losing_trades": 0, "filtered_out": 0}
     
     total_pnl = 0.0
     total_trades = 0
     winning_trades = 0
     losing_trades = 0
+    filtered_out = 0
     
     # For each prediction, calculate PnL by looking 10 bars ahead
     for i in range(len(predictions) - 10):
@@ -486,6 +492,11 @@ def calculate_all_time_pnl(predictions: List[PredictionResult]) -> Dict:
         
         # Only calculate PnL for non-NEUTRAL signals
         if pred.signal == "NEUTRAL":
+            continue
+        
+        # Filter by minimum confidence
+        if pred.confidence < min_confidence:
+            filtered_out += 1
             continue
             
         total_trades += 1
@@ -514,6 +525,7 @@ def calculate_all_time_pnl(predictions: List[PredictionResult]) -> Dict:
         "total_trades": total_trades,
         "winning_trades": winning_trades,
         "losing_trades": losing_trades,
+        "filtered_out": filtered_out,
     }
 
 
@@ -634,10 +646,6 @@ def main():
         st.session_state.engine = None
     if "predictions" not in st.session_state:
         st.session_state.predictions = deque(maxlen=10000)  # Store up to 10k signals
-    if "all_time_pnl" not in st.session_state:
-        st.session_state.all_time_pnl = 0.0
-    if "total_trades" not in st.session_state:
-        st.session_state.total_trades = 0
     if "last_update" not in st.session_state:
         st.session_state.last_update = None
     if "is_running" not in st.session_state:
@@ -729,6 +737,24 @@ def main():
         st.caption(
             f"Range: ${capital * risk_per_trade * 0.5:,.2f} - ${capital * risk_per_trade * 1.5:,.2f}"
         )
+        
+        st.markdown("---")
+        
+        # Trade Strategy Settings
+        st.markdown("### 🎯 Trade Strategy")
+        
+        min_confidence = st.slider(
+            "Min Confidence to Trade (%)",
+            min_value=0.0,
+            max_value=50.0,
+            value=0.0,
+            step=5.0,
+            help="Only take trades when model confidence is above this threshold"
+        )
+        min_conf_decimal = min_confidence / 100
+        
+        st.caption("**Strategy:** Higher confidence = larger position size")
+        st.caption("Position multiplier: 0.5x to 1.5x based on confidence")
 
     # Control panel - use container for stable positioning
     with control_panel_container:
@@ -790,8 +816,6 @@ def main():
             if st.button("🔄 RESTART", use_container_width=True, key="restart_btn"):
                 if st.session_state.stream:
                     st.session_state.predictions.clear()
-                    st.session_state.all_time_pnl = 0.0
-                    st.session_state.total_trades = 0
                     st.session_state.stream.restart()
                     st.info("Restarted!")
 
@@ -872,9 +896,15 @@ def main():
     with metrics_container:
         metrics = calculate_advanced_metrics(predictions, df)
         
-        # All-time PnL prominently displayed
-        all_time_pnl = st.session_state.get("all_time_pnl", 0.0)
-        total_trades = st.session_state.get("total_trades", 0)
+        # Calculate all-time PnL from predictions
+        all_time_stats = calculate_all_time_pnl(predictions)
+        all_time_pnl = all_time_stats["all_time_pnl"]
+        total_trades = all_time_stats["total_trades"]
+        winning_trades = all_time_stats["winning_trades"]
+        losing_trades = all_time_stats["losing_trades"]
+        
+        # Calculate win rate
+        win_rate_all_time = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
         
         col1, col2, col3, col4 = st.columns([2, 1.5, 1.5, 2])
         
@@ -886,7 +916,7 @@ def main():
                 delta=f"{all_time_pnl:+,.2f}",
                 delta_color="normal" if all_time_pnl >= 0 else "inverse",
             )
-            st.caption(f"Total Trades: {total_trades} | Active Signals: {len(predictions)}")
+            st.caption(f"Trades: {total_trades} ({winning_trades}W/{losing_trades}L) | Win Rate: {win_rate_all_time:.1f}%")
         
         with col2:
             if current_pred:
