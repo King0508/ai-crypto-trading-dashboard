@@ -886,15 +886,10 @@ def main():
         time.sleep(1)
         st.rerun()
         return
-
-    # Show initial loading ONLY when we have less than 60 bars AND zero predictions
-    if (
-        len(st.session_state.stream.bars) < 60
-        and len(st.session_state.predictions) == 0
-    ):
-        bars_count = len(st.session_state.stream.bars)
-        st.info(f"⏳ Warming up... ({bars_count}/60 bars)")
-        time.sleep(1)
+    
+    # If we have less than 60 bars, wait but don't show the message
+    if len(st.session_state.stream.bars) < 60 and len(st.session_state.predictions) == 0:
+        time.sleep(0.5)
         st.rerun()
         return
 
