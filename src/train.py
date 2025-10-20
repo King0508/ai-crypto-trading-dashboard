@@ -7,6 +7,7 @@ import math
 import time
 import random
 import argparse
+import pickle
 from typing import Dict, Tuple
 
 import numpy as np
@@ -109,7 +110,7 @@ def main(args):
     device = _get_device(cfg.get("device", "cpu"))
 
     # ---------------- dataset ----------------
-    splits, meta, n_seq = load_dataset(cfg)
+    splits, meta, n_seq, scaler = load_dataset(cfg)
 
     batch_size = _to_int(cfg.get("train", {}).get("batch_size", 256), 256)
     epochs = _to_int(cfg.get("train", {}).get("epochs", 10), 10)
@@ -199,7 +200,7 @@ def main(args):
         if improved:
             best_auc = val_auc
             no_improve = 0
-            # save checkpoint (state_dict only for simplicity)
+            # save checkpoint (state_dict + scaler + metadata)
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
@@ -208,6 +209,24 @@ def main(args):
                 },
                 ckpt_path,
             )
+            # Save scaler separately for easy loading in inference
+            scaler_path = os.path.join(artifacts_dir, "scaler.pkl")
+            with open(scaler_path, "wb") as f:
+                pickle.dump(scaler, f)
+            # Save metadata as JSON for human readability
+            meta_path = os.path.join(artifacts_dir, "meta.json")
+            with open(meta_path, "w") as f:
+                json.dump(
+                    {
+                        "feature_names": scaler["features"],
+                        "in_channels": meta.in_channels,
+                        "seq_len": meta.seq_len,
+                        "horizon": meta.horizon,
+                        "model_config": mcfg,
+                    },
+                    f,
+                    indent=2,
+                )
         else:
             no_improve += 1
             if no_improve >= patience:

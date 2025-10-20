@@ -189,4 +189,8 @@ def load_dataset(cfg: Dict) -> Tuple[Dict[str, TensorDataset], DatasetMeta, int]
         feature_names=features,
         standardize=standardize,
     )
-    return splits, meta, n_seq
+
+    # Return scaler stats for inference
+    scaler = {"mean": mean_c, "std": std_c, "features": features}
+
+    return splits, meta, n_seq, scaler

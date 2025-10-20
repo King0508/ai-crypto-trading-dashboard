@@ -76,7 +76,7 @@ def main(args):
     device = _get_device(cfg.get("device", "cpu"))
 
     # --- dataset
-    splits, meta, _ = load_dataset(cfg)
+    splits, meta, _, _ = load_dataset(cfg)
 
     batch_size = int(cfg.get("train", {}).get("batch_size", 256))
     th = _to_float(cfg.get("eval", {}).get("threshold", 0.5), 0.5)
