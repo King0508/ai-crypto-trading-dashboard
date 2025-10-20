@@ -896,12 +896,13 @@ def main():
     with metrics_container:
         metrics = calculate_advanced_metrics(predictions, df)
         
-        # Calculate all-time PnL from predictions
-        all_time_stats = calculate_all_time_pnl(predictions)
+        # Calculate all-time PnL from predictions with confidence filter
+        all_time_stats = calculate_all_time_pnl(predictions, min_confidence=min_conf_decimal)
         all_time_pnl = all_time_stats["all_time_pnl"]
         total_trades = all_time_stats["total_trades"]
         winning_trades = all_time_stats["winning_trades"]
         losing_trades = all_time_stats["losing_trades"]
+        filtered_out = all_time_stats["filtered_out"]
         
         # Calculate win rate
         win_rate_all_time = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
@@ -916,7 +917,10 @@ def main():
                 delta=f"{all_time_pnl:+,.2f}",
                 delta_color="normal" if all_time_pnl >= 0 else "inverse",
             )
-            st.caption(f"Trades: {total_trades} ({winning_trades}W/{losing_trades}L) | Win Rate: {win_rate_all_time:.1f}%")
+            caption_text = f"Trades: {total_trades} ({winning_trades}W/{losing_trades}L) | Win Rate: {win_rate_all_time:.1f}%"
+            if filtered_out > 0:
+                caption_text += f" | Filtered: {filtered_out}"
+            st.caption(caption_text)
         
         with col2:
             if current_pred:
