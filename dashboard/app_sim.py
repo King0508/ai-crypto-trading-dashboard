@@ -470,56 +470,64 @@ def create_main_chart(
     return fig
 
 
-def calculate_all_time_pnl(predictions: List[PredictionResult], min_confidence: float = 0.0) -> Dict:
+def calculate_all_time_pnl(
+    predictions: List[PredictionResult], min_confidence: float = 0.0
+) -> Dict:
     """Calculate all-time PnL and trade stats across ALL predictions.
-    
+
     Args:
         predictions: List of prediction results
         min_confidence: Minimum confidence threshold to filter trades (0.0 to 1.0)
     """
     if len(predictions) < 11:
-        return {"all_time_pnl": 0.0, "total_trades": 0, "winning_trades": 0, "losing_trades": 0, "filtered_out": 0}
-    
+        return {
+            "all_time_pnl": 0.0,
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "filtered_out": 0,
+        }
+
     total_pnl = 0.0
     total_trades = 0
     winning_trades = 0
     losing_trades = 0
     filtered_out = 0
-    
+
     # For each prediction, calculate PnL by looking 10 bars ahead
     for i in range(len(predictions) - 10):
         pred = predictions[i]
-        
+
         # Only calculate PnL for non-NEUTRAL signals
         if pred.signal == "NEUTRAL":
             continue
-        
+
         # Filter by minimum confidence
         if pred.confidence < min_confidence:
             filtered_out += 1
             continue
-            
+
         total_trades += 1
-        
+
         # Get exit price 10 bars later
         exit_pred = predictions[i + 10]
         entry_price = pred.price
         exit_price = exit_pred.price
-        
+
         # Calculate return
         ret = (exit_price - entry_price) / entry_price
         if pred.signal == "SHORT":
             ret = -ret
-            
+
         # Calculate PnL
         pnl = ret * pred.position_size_usd
         total_pnl += pnl
-        
+
         if pnl > 0:
             winning_trades += 1
         else:
             losing_trades += 1
-    
+
     return {
         "all_time_pnl": total_pnl,
         "total_trades": total_trades,
@@ -737,22 +745,22 @@ def main():
         st.caption(
             f"Range: ${capital * risk_per_trade * 0.5:,.2f} - ${capital * risk_per_trade * 1.5:,.2f}"
         )
-        
+
         st.markdown("---")
-        
+
         # Trade Strategy Settings
         st.markdown("### 🎯 Trade Strategy")
-        
+
         min_confidence = st.slider(
             "Min Confidence to Trade (%)",
             min_value=0.0,
             max_value=50.0,
             value=0.0,
             step=5.0,
-            help="Only take trades when model confidence is above this threshold"
+            help="Only take trades when model confidence is above this threshold",
         )
         min_conf_decimal = min_confidence / 100
-        
+
         st.caption("**Strategy:** Higher confidence = larger position size")
         st.caption("Position multiplier: 0.5x to 1.5x based on confidence")
 
@@ -878,9 +886,12 @@ def main():
         time.sleep(1)
         st.rerun()
         return
-        
+
     # Show initial loading ONLY when we have less than 60 bars AND zero predictions
-    if len(st.session_state.stream.bars) < 60 and len(st.session_state.predictions) == 0:
+    if (
+        len(st.session_state.stream.bars) < 60
+        and len(st.session_state.predictions) == 0
+    ):
         bars_count = len(st.session_state.stream.bars)
         st.info(f"⏳ Warming up... ({bars_count}/60 bars)")
         time.sleep(1)
@@ -895,33 +906,38 @@ def main():
     # Top metrics row - use container for stable rendering
     with metrics_container:
         metrics = calculate_advanced_metrics(predictions, df)
-        
+
         # Calculate all-time PnL from predictions with confidence filter
-        all_time_stats = calculate_all_time_pnl(predictions, min_confidence=min_conf_decimal)
+        all_time_stats = calculate_all_time_pnl(
+            predictions, min_confidence=min_conf_decimal
+        )
         all_time_pnl = all_time_stats["all_time_pnl"]
         total_trades = all_time_stats["total_trades"]
         winning_trades = all_time_stats["winning_trades"]
         losing_trades = all_time_stats["losing_trades"]
         filtered_out = all_time_stats["filtered_out"]
-        
+
         # Calculate win rate
-        win_rate_all_time = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
-        
+        win_rate_all_time = (
+            (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+        )
+
         col1, col2, col3, col4 = st.columns([2, 1.5, 1.5, 2])
-        
+
         with col1:
             # ALL-TIME PnL - MOST IMPORTANT METRIC
+            portfolio_growth_pct = (all_time_pnl / capital * 100) if capital > 0 else 0.0
             st.metric(
                 "💰 ALL-TIME PROFIT/LOSS",
                 f"${all_time_pnl:,.2f}",
-                delta=f"{all_time_pnl:+,.2f}",
+                delta=f"{portfolio_growth_pct:+.2f}%",
                 delta_color="normal" if all_time_pnl >= 0 else "inverse",
             )
             caption_text = f"Trades: {total_trades} ({winning_trades}W/{losing_trades}L) | Win Rate: {win_rate_all_time:.1f}%"
             if filtered_out > 0:
                 caption_text += f" | Filtered: {filtered_out}"
             st.caption(caption_text)
-        
+
         with col2:
             if current_pred:
                 price_change = df["ret_1"].iloc[-1] * 100
@@ -930,7 +946,7 @@ def main():
                     value=f"${current_pred.price:,.2f}",
                     delta=f"{price_change:+.2f}%",
                 )
-        
+
         with col3:
             if current_pred:
                 signal_class = f"signal-{current_pred.signal.lower()}"
@@ -939,10 +955,12 @@ def main():
                     unsafe_allow_html=True,
                 )
                 st.caption(f"Confidence: {current_pred.confidence*100:.1f}%")
-        
+
         with col4:
             st.metric("Win Rate", f"{metrics['win_rate']:.1f}%")
-            st.caption(f"Sharpe: {metrics['sharpe']:.2f} | Signals: {metrics['total_signals']}")
+            st.caption(
+                f"Sharpe: {metrics['sharpe']:.2f} | Signals: {metrics['total_signals']}"
+            )
 
         st.markdown("---")
 
