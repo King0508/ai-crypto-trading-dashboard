@@ -591,30 +591,34 @@ def main():
 
     # Load config
     cfg = load_config("configs/live.yaml")
-    
+
     # Settings panel in sidebar
     with st.sidebar:
         st.markdown("## ⚙️ **Trading Settings**")
-        
+
         # Symbol
         symbol = st.text_input("Symbol", value=cfg.get("symbol", "btcusdt"))
-        
+
         st.markdown("---")
-        
+
         # Preset or Custom thresholds
         threshold_mode = st.radio(
             "Threshold Mode",
             ["Preset", "Custom"],
             horizontal=True,
         )
-        
+
         if threshold_mode == "Preset":
             preset = st.selectbox(
                 "Strategy Preset",
-                ["Conservative (Fewer, Higher Quality)", "Balanced (Medium Signals)", "Aggressive (More Signals)"],
+                [
+                    "Conservative (Fewer, Higher Quality)",
+                    "Balanced (Medium Signals)",
+                    "Aggressive (More Signals)",
+                ],
                 index=1,
             )
-            
+
             if "Conservative" in preset:
                 long_th = 0.55
                 short_th = 0.45
@@ -636,7 +640,7 @@ def main():
                     max_value=0.99,
                     value=0.52,
                     step=0.01,
-                    help="Probability needed to trigger LONG signal"
+                    help="Probability needed to trigger LONG signal",
                 )
             with col2:
                 short_th = st.number_input(
@@ -645,11 +649,11 @@ def main():
                     max_value=0.50,
                     value=0.48,
                     step=0.01,
-                    help="Probability needed to trigger SHORT signal"
+                    help="Probability needed to trigger SHORT signal",
                 )
-        
+
         st.markdown("---")
-        
+
         # Position sizing settings
         st.markdown("### 💰 Position Sizing")
         capital = st.number_input(
@@ -659,22 +663,24 @@ def main():
             value=float(cfg.get("capital", 10000.0)),
             step=1000.0,
         )
-        
+
         risk_pct = st.slider(
             "Risk Per Trade (%)",
             min_value=0.1,
             max_value=10.0,
             value=float(cfg.get("risk_per_trade", 0.02)) * 100,
             step=0.1,
-            help="Percentage of capital to risk per trade"
+            help="Percentage of capital to risk per trade",
         )
         risk = risk_pct / 100
-        
+
         st.caption(f"Base position size: ${capital * risk:,.2f}")
-        st.caption(f"Range: ${capital * risk * 0.5:,.2f} - ${capital * risk * 1.5:,.2f}")
-        
+        st.caption(
+            f"Range: ${capital * risk * 0.5:,.2f} - ${capital * risk * 1.5:,.2f}"
+        )
+
         st.markdown("---")
-        
+
         # Chart settings
         chart_bars = st.slider("Chart Bars", 50, 500, 100, 10)
 
