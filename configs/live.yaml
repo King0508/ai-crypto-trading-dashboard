@@ -1,0 +1,30 @@
+# Live Trading Configuration
+symbol: "btcusdt"
+interval: "1m"
+
+# Model paths
+model_checkpoint: "artifacts/model.pt"
+scaler_path: "artifacts/scaler.pkl"
+meta_path: "artifacts/meta.json"
+
+# Inference settings
+device: "cpu"  # "cuda" or "cpu"
+long_threshold: 0.55  # Probability threshold for LONG signal
+short_threshold: 0.45  # Probability threshold for SHORT signal
+
+# Position sizing
+capital: 10000.0  # Total capital in USD
+risk_per_trade: 0.02  # Risk 2% per trade (Kelly-ish)
+
+# Dashboard settings
+dashboard:
+  refresh_interval: 60  # Seconds between refreshes
+  chart_bars: 100  # Number of bars to show in chart
+  history_size: 50  # Number of signals to keep in history
+  
+# Stream settings
+stream:
+  window_size: 200  # Number of bars to maintain in memory
+  reconnect_delay: 1  # Initial reconnect delay in seconds
+  max_reconnect_delay: 30  # Max reconnect delay in seconds
+
