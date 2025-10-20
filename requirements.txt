@@ -6,3 +6,7 @@ scikit-learn
 pyyaml
 matplotlib
 tqdm
+websocket-client
+streamlit
+plotly
+requests
