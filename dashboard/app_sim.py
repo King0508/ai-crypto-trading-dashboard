@@ -404,7 +404,11 @@ def create_main_chart(
         hovermode="x unified",
         plot_bgcolor="#0D0D0D",
         paper_bgcolor="#0D0D0D",
-        font=dict(color="#FFFFFF", family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", size=12),
+        font=dict(
+            color="#FFFFFF",
+            family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+            size=12,
+        ),
         margin=dict(l=60, r=20, t=40, b=20),
         legend=dict(
             orientation="h",
@@ -450,9 +454,18 @@ def create_main_chart(
             col=1,
         )
 
-    fig.update_yaxes(title_text="Price (USD)", row=1, col=1, title_font=dict(size=12, color="#8E8E93"))
-    fig.update_yaxes(title_text="Volume", row=2, col=1, title_font=dict(size=12, color="#8E8E93"))
-    fig.update_yaxes(title_text="RSI", row=3, col=1, title_font=dict(size=12, color="#8E8E93"))
+    fig.update_yaxes(
+        title_text="Price (USD)",
+        row=1,
+        col=1,
+        title_font=dict(size=12, color="#8E8E93"),
+    )
+    fig.update_yaxes(
+        title_text="Volume", row=2, col=1, title_font=dict(size=12, color="#8E8E93")
+    )
+    fig.update_yaxes(
+        title_text="RSI", row=3, col=1, title_font=dict(size=12, color="#8E8E93")
+    )
 
     return fig
 
@@ -460,13 +473,15 @@ def create_main_chart(
 def calculate_advanced_metrics(
     predictions: List[PredictionResult], df: pd.DataFrame
 ) -> Dict:
-    """Calculate advanced trading metrics."""
+    """Calculate advanced trading metrics including PnL."""
     if len(predictions) < 2:
         return {
             "win_rate": 0.0,
             "sharpe": 0.0,
             "total_signals": 0,
             "avg_confidence": 0.0,
+            "total_pnl": 0.0,
+            "pnl_per_signal": {},
         }
 
     active_signals = [p for p in predictions if p.signal != "NEUTRAL"]
@@ -477,13 +492,22 @@ def calculate_advanced_metrics(
             "sharpe": 0.0,
             "total_signals": 0,
             "avg_confidence": 0.0,
+            "total_pnl": 0.0,
+            "pnl_per_signal": {},
         }
 
-    # Calculate returns for each signal
+    # Calculate returns and PnL for each signal
     returns = []
     wins = 0
+    total_pnl = 0.0
+    pnl_per_signal = {}
 
-    for pred in active_signals[:-1]:
+    for pred in predictions:
+        if pred.signal == "NEUTRAL":
+            pnl_per_signal[pred.timestamp] = 0.0
+            continue
+
+        # Look forward 10 bars to calculate PnL
         future_idx = df[df["timestamp"] > pred.timestamp].head(10)
         if len(future_idx) > 0:
             future_price = future_idx["close"].iloc[-1]
@@ -492,10 +516,17 @@ def calculate_advanced_metrics(
             if pred.signal == "SHORT":
                 ret = -ret
 
-            returns.append(ret)
+            # Calculate dollar PnL
+            pnl = ret * pred.position_size_usd
+            pnl_per_signal[pred.timestamp] = pnl
+            total_pnl += pnl
 
+            returns.append(ret)
             if ret > 0:
                 wins += 1
+        else:
+            # Signal too recent, no exit yet
+            pnl_per_signal[pred.timestamp] = 0.0
 
     if not returns:
         return {
@@ -503,6 +534,8 @@ def calculate_advanced_metrics(
             "sharpe": 0.0,
             "total_signals": len(active_signals),
             "avg_confidence": np.mean([p.confidence for p in active_signals]) * 100,
+            "total_pnl": 0.0,
+            "pnl_per_signal": pnl_per_signal,
         }
 
     # Win rate
@@ -524,6 +557,8 @@ def calculate_advanced_metrics(
         "sharpe": sharpe,
         "total_signals": len(active_signals),
         "avg_confidence": avg_confidence,
+        "total_pnl": total_pnl,
+        "pnl_per_signal": pnl_per_signal,
     }
 
 
@@ -538,7 +573,7 @@ def main():
         st.markdown('<span class="sim-badge">SIMULATION</span>', unsafe_allow_html=True)
 
     st.markdown("---")
-    
+
     # Create persistent containers for stable rendering (prevents scroll jump)
     control_panel_container = st.container()
     metrics_container = st.container()
@@ -551,7 +586,11 @@ def main():
     if "engine" not in st.session_state:
         st.session_state.engine = None
     if "predictions" not in st.session_state:
-        st.session_state.predictions = deque(maxlen=100)
+        st.session_state.predictions = deque(maxlen=10000)  # Store up to 10k signals
+    if "all_time_pnl" not in st.session_state:
+        st.session_state.all_time_pnl = 0.0
+    if "total_trades" not in st.session_state:
+        st.session_state.total_trades = 0
     if "last_update" not in st.session_state:
         st.session_state.last_update = None
     if "is_running" not in st.session_state:
@@ -561,25 +600,29 @@ def main():
 
     # Load config
     cfg = load_config("configs/live.yaml")
-    
+
     # Settings panel in sidebar
     with st.sidebar:
         st.markdown("## ⚙️ **Trading Settings**")
-        
+
         # Preset or Custom thresholds
         threshold_mode = st.radio(
             "Threshold Mode",
             ["Preset", "Custom"],
             horizontal=True,
         )
-        
+
         if threshold_mode == "Preset":
             preset = st.selectbox(
                 "Strategy Preset",
-                ["Conservative (Fewer, Higher Quality)", "Balanced (Medium Signals)", "Aggressive (More Signals)"],
+                [
+                    "Conservative (Fewer, Higher Quality)",
+                    "Balanced (Medium Signals)",
+                    "Aggressive (More Signals)",
+                ],
                 index=1,
             )
-            
+
             if "Conservative" in preset:
                 long_thresh = 0.55
                 short_thresh = 0.45
@@ -601,7 +644,7 @@ def main():
                     max_value=0.99,
                     value=0.52,
                     step=0.01,
-                    help="Probability needed to trigger LONG signal"
+                    help="Probability needed to trigger LONG signal",
                 )
             with col2:
                 short_thresh = st.number_input(
@@ -610,11 +653,11 @@ def main():
                     max_value=0.50,
                     value=0.48,
                     step=0.01,
-                    help="Probability needed to trigger SHORT signal"
+                    help="Probability needed to trigger SHORT signal",
                 )
-        
+
         st.markdown("---")
-        
+
         # Position sizing settings
         st.markdown("### 💰 Position Sizing")
         capital = st.number_input(
@@ -624,26 +667,30 @@ def main():
             value=float(cfg.get("capital", 10000.0)),
             step=1000.0,
         )
-        
+
         risk_pct = st.slider(
             "Risk Per Trade (%)",
             min_value=0.1,
             max_value=10.0,
             value=float(cfg.get("risk_per_trade", 0.02)) * 100,
             step=0.1,
-            help="Percentage of capital to risk per trade"
+            help="Percentage of capital to risk per trade",
         )
         risk_per_trade = risk_pct / 100
-        
+
         st.caption(f"Base position size: ${capital * risk_per_trade:,.2f}")
-        st.caption(f"Range: ${capital * risk_per_trade * 0.5:,.2f} - ${capital * risk_per_trade * 1.5:,.2f}")
+        st.caption(
+            f"Range: ${capital * risk_per_trade * 0.5:,.2f} - ${capital * risk_per_trade * 1.5:,.2f}"
+        )
 
     # Control panel - use container for stable positioning
     with control_panel_container:
         col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 2, 4])
 
         with col1:
-            if st.button("▶️ START", use_container_width=True, type="primary", key="start_btn"):
+            if st.button(
+                "▶️ START", use_container_width=True, type="primary", key="start_btn"
+            ):
                 if not st.session_state.is_running:
                     try:
                         # Load inference engine with user-selected settings
@@ -665,9 +712,27 @@ def main():
 
                         def on_new_bar(df: pd.DataFrame, bar: Dict):
                             result = engine.predict(
-                                df, current_price=bar["close"], timestamp=bar["timestamp"]
+                                df,
+                                current_price=bar["close"],
+                                timestamp=bar["timestamp"],
                             )
                             predictions.append(result)
+                            
+                            # Track all-time PnL for non-NEUTRAL signals
+                            if result.signal != "NEUTRAL":
+                                st.session_state.total_trades += 1
+                                # Calculate PnL after 10 bars
+                                if len(predictions) >= 11:
+                                    old_pred = predictions[-11]
+                                    if old_pred.signal != "NEUTRAL":
+                                        # Calculate actual PnL for this trade
+                                        entry_price = old_pred.price
+                                        exit_price = bar["close"]
+                                        ret = (exit_price - entry_price) / entry_price
+                                        if old_pred.signal == "SHORT":
+                                            ret = -ret
+                                        pnl = ret * old_pred.position_size_usd
+                                        st.session_state.all_time_pnl += pnl
 
                         # Start simulation stream
                         st.session_state.stream = SimulationStream(
@@ -694,6 +759,8 @@ def main():
             if st.button("🔄 RESTART", use_container_width=True, key="restart_btn"):
                 if st.session_state.stream:
                     st.session_state.predictions.clear()
+                    st.session_state.all_time_pnl = 0.0
+                    st.session_state.total_trades = 0
                     st.session_state.stream.restart()
                     st.info("Restarted!")
 
@@ -719,7 +786,9 @@ def main():
                     total = len(st.session_state.stream.full_data)
                     current = st.session_state.stream.current_index
                     progress = (current / total) * 100 if total > 0 else 0
-                    st.progress(progress / 100, text=f"{current}/{total} bars ({progress:.1f}%)")
+                    st.progress(
+                        progress / 100, text=f"{current}/{total} bars ({progress:.1f}%)"
+                    )
 
         with col6:
             if st.session_state.is_running:
@@ -749,12 +818,16 @@ def main():
         )
         return
 
-    # Wait for data
-    if not st.session_state.stream or len(st.session_state.stream.bars) < 60:
-        bars_count = (
-            len(st.session_state.stream.bars) if st.session_state.stream else 0
-        )
-        st.info(f"⏳ Collecting initial data... ({bars_count}/60 bars)")
+    # Only wait for initial data if we truly have nothing yet
+    if not st.session_state.stream:
+        time.sleep(1)
+        st.rerun()
+        return
+        
+    # Show initial loading ONLY when we have less than 60 bars AND zero predictions
+    if len(st.session_state.stream.bars) < 60 and len(st.session_state.predictions) == 0:
+        bars_count = len(st.session_state.stream.bars)
+        st.info(f"⏳ Warming up... ({bars_count}/60 bars)")
         time.sleep(1)
         st.rerun()
         return
@@ -766,9 +839,25 @@ def main():
 
     # Top metrics row - use container for stable rendering
     with metrics_container:
-        col1, col2, col3, col4, col5 = st.columns(5)
-
+        metrics = calculate_advanced_metrics(predictions, df)
+        
+        # All-time PnL prominently displayed
+        all_time_pnl = st.session_state.get("all_time_pnl", 0.0)
+        total_trades = st.session_state.get("total_trades", 0)
+        
+        col1, col2, col3, col4 = st.columns([2, 1.5, 1.5, 2])
+        
         with col1:
+            # ALL-TIME PnL - MOST IMPORTANT METRIC
+            st.metric(
+                "💰 ALL-TIME PROFIT/LOSS",
+                f"${all_time_pnl:,.2f}",
+                delta=f"{all_time_pnl:+,.2f}",
+                delta_color="normal" if all_time_pnl >= 0 else "inverse",
+            )
+            st.caption(f"Total Trades: {total_trades} | Active Signals: {len(predictions)}")
+        
+        with col2:
             if current_pred:
                 price_change = df["ret_1"].iloc[-1] * 100
                 st.metric(
@@ -776,8 +865,8 @@ def main():
                     value=f"${current_pred.price:,.2f}",
                     delta=f"{price_change:+.2f}%",
                 )
-
-        with col2:
+        
+        with col3:
             if current_pred:
                 signal_class = f"signal-{current_pred.signal.lower()}"
                 st.markdown(
@@ -785,20 +874,10 @@ def main():
                     unsafe_allow_html=True,
                 )
                 st.caption(f"Confidence: {current_pred.confidence*100:.1f}%")
-
-        with col3:
-            if current_pred and current_pred.signal != "NEUTRAL":
-                st.metric("Position Size", f"${current_pred.position_size_usd:,.0f}")
-                st.caption(f"{current_pred.position_size_pct:.2f}% capital")
-
+        
         with col4:
-            metrics = calculate_advanced_metrics(predictions, df)
             st.metric("Win Rate", f"{metrics['win_rate']:.1f}%")
-            st.caption(f"Sharpe: {metrics['sharpe']:.2f}")
-
-        with col5:
-            st.metric("Total Signals", metrics["total_signals"])
-            st.caption(f"Avg Conf: {metrics['avg_confidence']:.1f}%")
+            st.caption(f"Sharpe: {metrics['sharpe']:.2f} | Signals: {metrics['total_signals']}")
 
         st.markdown("---")
 
@@ -806,7 +885,9 @@ def main():
     with chart_container:
         chart_df = df.tail(100)
         main_fig = create_main_chart(chart_df, predictions[-50:] if predictions else [])
-        st.plotly_chart(main_fig, use_container_width=True, key=f"main_chart_{len(predictions)}")
+        st.plotly_chart(
+            main_fig, use_container_width=True, key=f"main_chart_{len(predictions)}"
+        )
 
         st.markdown("---")
 
@@ -815,9 +896,11 @@ def main():
         st.markdown("### 📝 **Recent Signals**")
 
         if predictions:
+            pnl_map = metrics.get("pnl_per_signal", {})
             history_data = []
             for pred in reversed(predictions[-20:]):
                 if pred.signal != "NEUTRAL":
+                    pnl = pnl_map.get(pred.timestamp, 0.0)
                     history_data.append(
                         {
                             "Time": pred.timestamp.strftime("%m/%d %H:%M"),
@@ -826,6 +909,7 @@ def main():
                             "Prob": f"{pred.probability*100:.1f}%",
                             "Conf": f"{pred.confidence*100:.1f}%",
                             "Position": f"${pred.position_size_usd:.0f}",
+                            "PnL": f"${pnl:+,.2f}" if pnl != 0 else "$0.00",
                         }
                     )
 
@@ -846,4 +930,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
