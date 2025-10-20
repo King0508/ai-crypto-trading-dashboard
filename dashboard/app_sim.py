@@ -39,66 +39,195 @@ st.set_page_config(
 st.markdown(
     """
 <style>
+    /* Robinhood-inspired theme */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
     .stApp {
-        background-color: #000000;
+        background-color: #0D0D0D;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
+    
+    /* Prevent scroll jump on refresh */
+    html {
+        scroll-behavior: smooth;
+    }
+    
+    .main .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 0rem;
+        max-width: 1400px;
+    }
+    
+    /* Robinhood-style cards */
     .metric-card {
-        background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+        background: #1C1C1E;
         padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #333;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        border-radius: 16px;
+        border: 1px solid #2C2C2E;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        transition: all 0.2s ease;
     }
+    
+    .metric-card:hover {
+        border-color: #3C3C3E;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+    
+    /* Typography */
+    h1, h2, h3, h4, h5, h6 {
+        color: #FFFFFF;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+    }
+    
+    h1 {
+        font-size: 28px;
+        font-weight: 700;
+    }
+    
+    h3 {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 16px;
+    }
+    
+    /* Robinhood green/red colors */
     .positive {
         color: #00C805;
         font-weight: 600;
     }
+    
     .negative {
         color: #FF3B69;
         font-weight: 600;
     }
-    h1, h2, h3 {
-        color: #FFFFFF;
-        font-weight: 600;
-    }
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 0rem;
-    }
+    
+    /* Metrics styling */
     [data-testid="stMetricValue"] {
         font-size: 32px;
+        font-weight: 700;
+        color: #FFFFFF;
+        font-family: 'Inter', sans-serif;
+    }
+    
+    [data-testid="stMetricLabel"] {
+        font-size: 13px;
+        color: #8E8E93;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    [data-testid="stMetricDelta"] {
+        font-size: 14px;
         font-weight: 600;
     }
+    
+    /* Signal badges - Robinhood style */
     .signal-badge {
         display: inline-block;
-        padding: 8px 16px;
+        padding: 10px 20px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 16px;
+        font-family: 'Inter', sans-serif;
+        letter-spacing: 0.3px;
+    }
+    
+    .signal-long {
+        background-color: rgba(0, 200, 5, 0.15);
+        color: #00C805;
+        border: 2px solid rgba(0, 200, 5, 0.3);
+    }
+    
+    .signal-short {
+        background-color: rgba(255, 59, 105, 0.15);
+        color: #FF3B69;
+        border: 2px solid rgba(255, 59, 105, 0.3);
+    }
+    
+    .signal-neutral {
+        background-color: rgba(142, 142, 147, 0.15);
+        color: #8E8E93;
+        border: 2px solid rgba(142, 142, 147, 0.3);
+    }
+    
+    /* Simulation badge */
+    .sim-badge {
+        background-color: rgba(157, 78, 221, 0.15);
+        color: #9D4EDD;
+        border: 2px solid rgba(157, 78, 221, 0.3);
+        padding: 6px 14px;
         border-radius: 8px;
         font-weight: 600;
-        font-size: 18px;
+        font-size: 12px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
     }
-    .signal-long {
-        background-color: rgba(0, 200, 5, 0.2);
-        color: #00C805;
-        border: 2px solid #00C805;
-    }
-    .signal-short {
-        background-color: rgba(255, 59, 105, 0.2);
-        color: #FF3B69;
-        border: 2px solid #FF3B69;
-    }
-    .signal-neutral {
-        background-color: rgba(150, 150, 150, 0.2);
-        color: #999999;
-        border: 2px solid #999999;
-    }
-    .sim-badge {
-        background-color: rgba(157, 78, 221, 0.2);
-        color: #9D4EDD;
-        border: 2px solid #9D4EDD;
-        padding: 4px 12px;
-        border-radius: 6px;
+    
+    /* Buttons - Robinhood style */
+    .stButton>button {
+        background-color: #1C1C1E;
+        color: #FFFFFF;
+        border: 1px solid #2C2C2E;
+        border-radius: 12px;
         font-weight: 600;
-        font-size: 14px;
+        font-family: 'Inter', sans-serif;
+        padding: 12px 24px;
+        transition: all 0.2s ease;
+    }
+    
+    .stButton>button:hover {
+        background-color: #2C2C2E;
+        border-color: #3C3C3E;
+    }
+    
+    .stButton>button[kind="primary"] {
+        background-color: #00C805;
+        color: #000000;
+        border: none;
+    }
+    
+    .stButton>button[kind="primary"]:hover {
+        background-color: #00E005;
+    }
+    
+    /* Divider */
+    hr {
+        border-color: #2C2C2E;
+        margin: 1.5rem 0;
+    }
+    
+    /* Info boxes */
+    .stAlert {
+        background-color: #1C1C1E;
+        border: 1px solid #2C2C2E;
+        border-radius: 12px;
+        color: #FFFFFF;
+    }
+    
+    /* Dataframe styling */
+    [data-testid="stDataFrame"] {
+        background-color: #1C1C1E;
+        border-radius: 12px;
+    }
+    
+    /* Selectbox */
+    .stSelectbox {
+        background-color: #1C1C1E;
+    }
+    
+    /* Progress bar */
+    .stProgress > div > div {
+        background-color: #00C805;
+    }
+    
+    /* Caption text */
+    .caption {
+        color: #8E8E93;
+        font-size: 13px;
+        font-weight: 500;
     }
 </style>
 """,
@@ -273,9 +402,9 @@ def create_main_chart(
         height=700,
         xaxis_rangeslider_visible=False,
         hovermode="x unified",
-        plot_bgcolor="#000000",
-        paper_bgcolor="#000000",
-        font=dict(color="#FFFFFF", family="Arial, sans-serif"),
+        plot_bgcolor="#0D0D0D",
+        paper_bgcolor="#0D0D0D",
+        font=dict(color="#FFFFFF", family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", size=12),
         margin=dict(l=60, r=20, t=40, b=20),
         legend=dict(
             orientation="h",
@@ -283,36 +412,47 @@ def create_main_chart(
             y=1.02,
             xanchor="right",
             x=1,
-            bgcolor="rgba(0, 0, 0, 0.5)",
-            bordercolor="#333333",
+            bgcolor="rgba(28, 28, 30, 0.9)",
+            bordercolor="#2C2C2E",
             borderwidth=1,
+            font=dict(size=11),
         ),
         xaxis3=dict(
             showgrid=True,
-            gridcolor="#1a1a1a",
+            gridcolor="#1C1C1E",
             title="Time",
-            title_font=dict(size=12),
+            title_font=dict(size=12, color="#8E8E93"),
+        ),
+        hoverlabel=dict(
+            bgcolor="#1C1C1E",
+            font_size=12,
+            font_family="Inter, sans-serif",
+            bordercolor="#2C2C2E",
         ),
     )
 
-    # Update all axes
+    # Update all axes with Robinhood-style colors
     for i in [1, 2, 3]:
         fig.update_xaxes(
             showgrid=True,
-            gridcolor="#1a1a1a",
+            gridcolor="#1C1C1E",
+            gridwidth=1,
+            zeroline=False,
             row=i,
             col=1,
         )
         fig.update_yaxes(
             showgrid=True,
-            gridcolor="#1a1a1a",
+            gridcolor="#1C1C1E",
+            gridwidth=1,
+            zeroline=False,
             row=i,
             col=1,
         )
 
-    fig.update_yaxes(title_text="Price (USD)", row=1, col=1, title_font=dict(size=12))
-    fig.update_yaxes(title_text="Volume", row=2, col=1, title_font=dict(size=12))
-    fig.update_yaxes(title_text="RSI", row=3, col=1, title_font=dict(size=12))
+    fig.update_yaxes(title_text="Price (USD)", row=1, col=1, title_font=dict(size=12, color="#8E8E93"))
+    fig.update_yaxes(title_text="Volume", row=2, col=1, title_font=dict(size=12, color="#8E8E93"))
+    fig.update_yaxes(title_text="RSI", row=3, col=1, title_font=dict(size=12, color="#8E8E93"))
 
     return fig
 
@@ -398,6 +538,12 @@ def main():
         st.markdown('<span class="sim-badge">SIMULATION</span>', unsafe_allow_html=True)
 
     st.markdown("---")
+    
+    # Create persistent containers for stable rendering (prevents scroll jump)
+    control_panel_container = st.container()
+    metrics_container = st.container()
+    chart_container = st.container()
+    signals_container = st.container()
 
     # Initialize session state
     if "stream" not in st.session_state:
@@ -416,92 +562,93 @@ def main():
     # Load config
     cfg = load_config("configs/live.yaml")
 
-    # Control panel
-    col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 2, 4])
+    # Control panel - use container for stable positioning
+    with control_panel_container:
+        col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 2, 4])
 
-    with col1:
-        if st.button("▶️ START", use_container_width=True, type="primary"):
-            if not st.session_state.is_running:
-                try:
-                    # Load inference engine
-                    st.session_state.engine = InferenceEngine(
-                        model_path=cfg["model_checkpoint"],
-                        scaler_path=cfg["scaler_path"],
-                        meta_path=cfg["meta_path"],
-                        device=cfg.get("device", "cpu"),
-                        long_threshold=float(cfg.get("long_threshold", 0.55)),
-                        short_threshold=float(cfg.get("short_threshold", 0.45)),
-                        capital=float(cfg.get("capital", 10000.0)),
-                        risk_per_trade=float(cfg.get("risk_per_trade", 0.02)),
-                    )
-
-                    # Create callback for new bars
-                    def on_new_bar(df: pd.DataFrame, bar: Dict):
-                        result = st.session_state.engine.predict(
-                            df, current_price=bar["close"], timestamp=bar["timestamp"]
+        with col1:
+            if st.button("▶️ START", use_container_width=True, type="primary", key="start_btn"):
+                if not st.session_state.is_running:
+                    try:
+                        # Load inference engine
+                        st.session_state.engine = InferenceEngine(
+                            model_path=cfg["model_checkpoint"],
+                            scaler_path=cfg["scaler_path"],
+                            meta_path=cfg["meta_path"],
+                            device=cfg.get("device", "cpu"),
+                            long_threshold=float(cfg.get("long_threshold", 0.55)),
+                            short_threshold=float(cfg.get("short_threshold", 0.45)),
+                            capital=float(cfg.get("capital", 10000.0)),
+                            risk_per_trade=float(cfg.get("risk_per_trade", 0.02)),
                         )
-                        st.session_state.predictions.append(result)
-                        st.session_state.last_update = datetime.now()
 
-                    # Start simulation stream
-                    st.session_state.stream = SimulationStream(
-                        data_path="data/btcusdt_1m.parquet",
-                        window_size=200,
-                        speed_multiplier=st.session_state.speed,
-                        on_bar_callback=on_new_bar,
-                    )
+                        # Create callback for new bars
+                        def on_new_bar(df: pd.DataFrame, bar: Dict):
+                            result = st.session_state.engine.predict(
+                                df, current_price=bar["close"], timestamp=bar["timestamp"]
+                            )
+                            st.session_state.predictions.append(result)
+                            st.session_state.last_update = datetime.now()
 
-                    st.session_state.stream.start()
-                    st.session_state.is_running = True
-                    st.success(f"Started at {st.session_state.speed}x speed!")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                        # Start simulation stream
+                        st.session_state.stream = SimulationStream(
+                            data_path="data/btcusdt_1m.parquet",
+                            window_size=200,
+                            speed_multiplier=st.session_state.speed,
+                            on_bar_callback=on_new_bar,
+                        )
 
-    with col2:
-        if st.button("⏹️ STOP", use_container_width=True):
-            if st.session_state.is_running and st.session_state.stream:
-                st.session_state.stream.stop()
-                st.session_state.is_running = False
-                st.info("Stopped")
+                        st.session_state.stream.start()
+                        st.session_state.is_running = True
+                        st.success(f"Started at {st.session_state.speed}x speed!")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
-    with col3:
-        if st.button("🔄 RESTART", use_container_width=True):
-            if st.session_state.stream:
-                st.session_state.predictions.clear()
-                st.session_state.stream.restart()
-                st.info("Restarted!")
+        with col2:
+            if st.button("⏹️ STOP", use_container_width=True, key="stop_btn"):
+                if st.session_state.is_running and st.session_state.stream:
+                    st.session_state.stream.stop()
+                    st.session_state.is_running = False
+                    st.info("Stopped")
 
-    with col4:
-        # Speed selector
-        speed_options = {"1x": 1.0, "5x": 5.0, "10x": 10.0, "50x": 50.0}
-        selected_speed = st.selectbox(
-            "Speed",
-            options=list(speed_options.keys()),
-            index=2,  # Default to 10x
-        )
-        new_speed = speed_options[selected_speed]
-        if new_speed != st.session_state.speed:
-            st.session_state.speed = new_speed
-            if st.session_state.stream:
-                st.session_state.stream.set_speed(new_speed)
+        with col3:
+            if st.button("🔄 RESTART", use_container_width=True, key="restart_btn"):
+                if st.session_state.stream:
+                    st.session_state.predictions.clear()
+                    st.session_state.stream.restart()
+                    st.info("Restarted!")
 
-    with col5:
-        if st.session_state.is_running:
-            progress = 0
-            if st.session_state.stream:
-                total = len(st.session_state.stream.full_data)
-                current = st.session_state.stream.current_index
-                progress = (current / total) * 100 if total > 0 else 0
-                st.progress(progress / 100)
-                st.caption(f"{current}/{total} bars ({progress:.1f}%)")
+        with col4:
+            # Speed selector
+            speed_options = {"1x": 1.0, "5x": 5.0, "10x": 10.0, "50x": 50.0}
+            selected_speed = st.selectbox(
+                "Speed",
+                options=list(speed_options.keys()),
+                index=2,  # Default to 10x
+                key="speed_selector",
+            )
+            new_speed = speed_options[selected_speed]
+            if new_speed != st.session_state.speed:
+                st.session_state.speed = new_speed
+                if st.session_state.stream:
+                    st.session_state.stream.set_speed(new_speed)
 
-    with col6:
-        if st.session_state.is_running:
-            st.success(f"🟢 RUNNING @ {st.session_state.speed}x")
-        else:
-            st.warning("🔴 STOPPED")
+        with col5:
+            if st.session_state.is_running:
+                progress = 0
+                if st.session_state.stream:
+                    total = len(st.session_state.stream.full_data)
+                    current = st.session_state.stream.current_index
+                    progress = (current / total) * 100 if total > 0 else 0
+                    st.progress(progress / 100, text=f"{current}/{total} bars ({progress:.1f}%)")
 
-    st.markdown("---")
+        with col6:
+            if st.session_state.is_running:
+                st.success(f"🟢 RUNNING @ {st.session_state.speed}x")
+            else:
+                st.warning("🔴 STOPPED")
+
+        st.markdown("---")
 
     # Main content
     if not st.session_state.is_running:
@@ -538,77 +685,80 @@ def main():
     predictions = list(st.session_state.predictions)
     current_pred = predictions[-1] if predictions else None
 
-    # Top metrics row
-    col1, col2, col3, col4, col5 = st.columns(5)
+    # Top metrics row - use container for stable rendering
+    with metrics_container:
+        col1, col2, col3, col4, col5 = st.columns(5)
 
-    with col1:
-        if current_pred:
-            price_change = df["ret_1"].iloc[-1] * 100
-            st.metric(
-                label="BTCUSDT",
-                value=f"${current_pred.price:,.2f}",
-                delta=f"{price_change:+.2f}%",
-            )
-
-    with col2:
-        if current_pred:
-            signal_class = f"signal-{current_pred.signal.lower()}"
-            st.markdown(
-                f'<div class="signal-badge {signal_class}">{current_pred.signal}</div>',
-                unsafe_allow_html=True,
-            )
-            st.caption(f"Confidence: {current_pred.confidence*100:.1f}%")
-
-    with col3:
-        if current_pred and current_pred.signal != "NEUTRAL":
-            st.metric("Position Size", f"${current_pred.position_size_usd:,.0f}")
-            st.caption(f"{current_pred.position_size_pct:.2f}% capital")
-
-    with col4:
-        metrics = calculate_advanced_metrics(predictions, df)
-        st.metric("Win Rate", f"{metrics['win_rate']:.1f}%")
-        st.caption(f"Sharpe: {metrics['sharpe']:.2f}")
-
-    with col5:
-        st.metric("Total Signals", metrics["total_signals"])
-        st.caption(f"Avg Conf: {metrics['avg_confidence']:.1f}%")
-
-    st.markdown("---")
-
-    # Main chart
-    chart_df = df.tail(100)
-    main_fig = create_main_chart(chart_df, predictions[-50:] if predictions else [])
-    st.plotly_chart(main_fig, use_container_width=True)
-
-    st.markdown("---")
-
-    # Signal history
-    st.markdown("### 📝 **Recent Signals**")
-
-    if predictions:
-        history_data = []
-        for pred in reversed(predictions[-20:]):
-            if pred.signal != "NEUTRAL":
-                history_data.append(
-                    {
-                        "Time": pred.timestamp.strftime("%m/%d %H:%M"),
-                        "Signal": pred.signal,
-                        "Price": f"${pred.price:.2f}",
-                        "Prob": f"{pred.probability*100:.1f}%",
-                        "Conf": f"{pred.confidence*100:.1f}%",
-                        "Position": f"${pred.position_size_usd:.0f}",
-                    }
+        with col1:
+            if current_pred:
+                price_change = df["ret_1"].iloc[-1] * 100
+                st.metric(
+                    label="BTCUSDT",
+                    value=f"${current_pred.price:,.2f}",
+                    delta=f"{price_change:+.2f}%",
                 )
 
-        if history_data:
-            st.dataframe(
-                history_data,
-                use_container_width=True,
-                hide_index=True,
-                height=300,
-            )
-        else:
-            st.info("No active signals yet (all NEUTRAL)")
+        with col2:
+            if current_pred:
+                signal_class = f"signal-{current_pred.signal.lower()}"
+                st.markdown(
+                    f'<div class="signal-badge {signal_class}">{current_pred.signal}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.caption(f"Confidence: {current_pred.confidence*100:.1f}%")
+
+        with col3:
+            if current_pred and current_pred.signal != "NEUTRAL":
+                st.metric("Position Size", f"${current_pred.position_size_usd:,.0f}")
+                st.caption(f"{current_pred.position_size_pct:.2f}% capital")
+
+        with col4:
+            metrics = calculate_advanced_metrics(predictions, df)
+            st.metric("Win Rate", f"{metrics['win_rate']:.1f}%")
+            st.caption(f"Sharpe: {metrics['sharpe']:.2f}")
+
+        with col5:
+            st.metric("Total Signals", metrics["total_signals"])
+            st.caption(f"Avg Conf: {metrics['avg_confidence']:.1f}%")
+
+        st.markdown("---")
+
+    # Main chart - use container with key for stable rendering
+    with chart_container:
+        chart_df = df.tail(100)
+        main_fig = create_main_chart(chart_df, predictions[-50:] if predictions else [])
+        st.plotly_chart(main_fig, use_container_width=True, key=f"main_chart_{len(predictions)}")
+
+        st.markdown("---")
+
+    # Signal history - use container
+    with signals_container:
+        st.markdown("### 📝 **Recent Signals**")
+
+        if predictions:
+            history_data = []
+            for pred in reversed(predictions[-20:]):
+                if pred.signal != "NEUTRAL":
+                    history_data.append(
+                        {
+                            "Time": pred.timestamp.strftime("%m/%d %H:%M"),
+                            "Signal": pred.signal,
+                            "Price": f"${pred.price:.2f}",
+                            "Prob": f"{pred.probability*100:.1f}%",
+                            "Conf": f"{pred.confidence*100:.1f}%",
+                            "Position": f"${pred.position_size_usd:.0f}",
+                        }
+                    )
+
+            if history_data:
+                st.dataframe(
+                    history_data,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=300,
+                )
+            else:
+                st.info("No active signals yet (all NEUTRAL)")
 
     # Auto-refresh
     time.sleep(2)
