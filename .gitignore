@@ -1,18 +1,30 @@
-@'
-# --- Python ---
+# Python
 __pycache__/
+*.py[cod]
 *.pyc
 *.pyo
 *.pyd
 *.egg-info/
 .pytest_cache/
 
-# --- Virtualenv / tooling ---
+# Virtual Environment
 .venv/
-.env/
-.env.local
+venv/
+ENV/
 
-# --- Data / models / logs ---
+# Environment & Secrets
+.env
+.env.local
+.env.production
+*.key
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+trading.db
+
+# Data & Models
 data/
 artifacts/
 *.parquet
@@ -20,11 +32,22 @@ artifacts/
 *.pkl
 *.pt
 *.jsonl
-tensorboard/
 
-# --- OS/IDE ---
+# Logs
+logs/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
 .DS_Store
 Thumbs.db
+
+# IDE
 .vscode/
 .idea/
-'@ | Out-File -Encoding UTF8 .gitignore
+*.swp
+
+# Tensorboard
+tensorboard/
